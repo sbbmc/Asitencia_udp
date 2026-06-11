@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <title>AsistApp</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="styles.css"/>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="screen active" id="s-login">
+  <div class="login-wrap">
+    <div class="login-logo">
+      <div class="logo-mark">A</div>
+      <span class="logo-label">AsistUDP</span>
+    </div>
+    <h1 class="login-title">Bienvenido</h1>
+    <p class="login-sub">Inicia sesión para continuar</p>
+    <div class="field-group">
+      <label>Correo institucional</label>
+      <input type="email" id="input-correo" placeholder="usuario@universidad.cl"/>
+    </div>
+    <div class="field-group">
+      <label>Contraseña</label>
+      <input type="password" id="input-password" placeholder="••••••••"/>
+    </div>
+    <div class="role-selector">
+      <button class="role-btn active" id="btn-est" onclick="selectRole('estudiante')">Estudiante</button>
+      <button class="role-btn" id="btn-prof" onclick="selectRole('profesor')">Profesor</button>
+    </div>
+    <button class="btn-red" id="btn-login" onclick="doLogin()">Iniciar sesión</button>
+    <p id="login-error" style="color:#D42931;font-size:13px;text-align:center;display:none;"></p>
+    <p class="login-forgot"><a href="#">¿Olvidaste tu contraseña?</a></p>
+  </div>
+</div>
+
+<!-- SIDEBAR OVERLAY -->
+<div class="sidebar-overlay" id="overlay" onclick="closeSidebar()"></div>
+<div class="sidebar" id="sidebar">
+  <div class="sb-profile">
+    <div class="sb-avatar" id="sb-avatar">CT</div>
+    <div>
+      <p class="sb-name" id="sb-name">—</p>
+      <p class="sb-role-lbl" id="sb-role-label">—</p>
+    </div>
+  </div>
+  <div class="sb-info">
+    <div class="sb-row"><span class="sb-key">Correo</span><span class="sb-val" id="sb-email">—</span></div>
+    <div class="sb-row"><span class="sb-key">RUT</span><span class="sb-val" id="sb-rut">—</span></div>
+  </div>
+  <div id="sb-prof-extra" style="display:none; margin-top:1.25rem;">
+    <button class="btn-outline-red" onclick="abrirListaModal(); closeSidebar()">📋 &nbsp;Lista de asistencia</button>
+  </div>
+  <button class="sb-logout" onclick="doLogout()">Cerrar sesión</button>
+</div>
+
+<!-- ══════════════════════════════════════════
+     PANTALLA ESTUDIANTE
+══════════════════════════════════════════ -->
+<div class="screen" id="s-estudiante">
+  <div class="topbar">
+    <button class="avatar-btn" onclick="openSidebar()">
+      <div class="avatar-mini" id="est-avatar">CT</div>
+    </button>
+    <span class="topbar-title">AsistUDP</span>
+    <div style="width:36px"></div>
+  </div>
+
+  <div class="qr-section">
+    <p class="qr-label">Registrar asistencia</p>
+    <button class="btn-red btn-icon-btn" onclick="openCamera()">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="3" height="3"/><rect x="14" y="7" width="3" height="3"/><rect x="7" y="14" width="3" height="3"/><rect x="14" y="14" width="3" height="3"/></svg>
+      Escanear código QR
+    </button>
+  </div>
+
+  <!-- Modal cámara: ingreso manual del token para simular escaneo -->
+  <div class="modal-overlay" id="modal-camera">
+    <div class="modal-box" style="padding:1.25rem;">
+      <p class="modal-title">Escanear QR</p>
+      <div id="qr-reader" style="width:100%;max-width:300px;margin:0 auto;border-radius:12px;overflow:hidden;"></div>
+      <p id="cam-status" style="font-size:13px;color:#ABABAB;text-align:center;margin:0.75rem 0;">Apunta al código QR del profesor</p>
+      <div class="field-group" style="width:100%;margin-top:0.5rem;">
+        <label>O pega el token manualmente</label>
+        <input type="text" id="input-token-qr" placeholder="token del QR..." style="font-size:12px"/>
+      </div>
+      <button class="btn-red" onclick="registrarAsistenciaManual()" style="margin-top:0.5rem;">Confirmar manual</button>
+      <button class="btn-ghost" onclick="closeCamera()">Cancelar</button>
+      <p id="cam-error" style="color:#D42931;font-size:12px;text-align:center;display:none;"></p>
+    </div>
+  </div>
+
+  <div class="toast" id="toast-est"></div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     PANTALLA PROFESOR
+══════════════════════════════════════════ -->
+<div class="screen" id="s-profesor">
+  <div class="topbar">
+    <button class="avatar-btn" onclick="openSidebar()">
+      <div class="avatar-mini" id="prof-avatar" style="background:#D42931;">AR</div>
+    </button>
+    <span class="topbar-title">AsistUDP</span>
+    <div style="width:36px"></div>
+  </div>
+
+  <div class="qr-section">
+    <p class="qr-label">Iniciar registro de asistencia</p>
+
+    <!-- Selector de ramo (se llena dinámicamente) -->
+    <div class="field-group" style="width:100%;max-width:320px">
+      <label>Selecciona el ramo</label>
+      <select id="select-ramo" style="border:1.5px solid #E5E5E5;border-radius:10px;padding:12px 14px;font-family:var(--font);font-size:15px;width:100%;background:#fff;color:#161616;outline:none;">
+        <option value="">Cargando ramos...</option>
+      </select>
+    </div>
+
+    <button class="btn-red btn-icon-btn" style="max-width:320px;width:100%" onclick="generateQR()">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3"/><path d="M17 17h3v3"/><path d="M14 20h3"/></svg>
+      Generar código QR
+    </button>
+  </div>
+
+  <!-- Modal QR -->
+  <div class="modal-overlay" id="modal-qr">
+    <div class="modal-box">
+      <p class="modal-title">Código QR activo</p>
+      <p class="modal-sub" id="qr-modal-sub">—</p>
+      <div class="qr-display" id="qr-svg-wrap">
+        <img id="qr-img" src="" alt="QR" style="width:200px;height:200px;display:block;"/>
+      </div>
+      <div class="qr-timer">🔄 Renueva en <strong id="qr-seconds">7</strong>s · válido 7s</div>
+      <!-- Token visible para pruebas (puedes remover en producción) -->
+      <p id="qr-token-debug" style="font-size:10px;color:#ABABAB;word-break:break-all;text-align:center;max-width:260px;"></p>
+      <button class="btn-ghost" onclick="closeQR()">Cerrar</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast-prof"></div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     PANTALLA LISTA ASISTENCIA
+══════════════════════════════════════════ -->
+<div class="screen" id="s-lista">
+  <div class="topbar">
+    <button class="back-btn" onclick="goTo('s-profesor')">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <span class="topbar-title">Asistencia</span>
+    <div style="width:36px"></div>
+  </div>
+
+  <div class="lista-header">
+    <p class="lista-ramo" id="lista-ramo-nombre">—</p>
+    <p class="lista-fecha" id="lista-fecha">—</p>
+    <div class="lista-resumen">
+      <div class="res-item"><span class="res-num res-green" id="cnt-present">0</span><span class="res-lbl">Presentes</span></div>
+      <div class="res-sep"></div>
+      <div class="res-item"><span class="res-num res-red" id="cnt-absent">0</span><span class="res-lbl">Ausentes</span></div>
+      <div class="res-sep"></div>
+      <div class="res-item"><span class="res-num res-gray" id="cnt-total">0</span><span class="res-lbl">Total</span></div>
+    </div>
+  </div>
+
+  <div class="students-list" id="students-list">
+    <p style="text-align:center;color:#ABABAB;padding:2rem;font-size:14px;">Cargando lista...</p>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     MODAL: seleccionar clase para ver lista
+══════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-lista-sel">
+  <div class="modal-box">
+    <p class="modal-title">Ver lista de asistencia</p>
+    <p class="modal-sub">Selecciona la clase activa</p>
+    <div class="field-group" style="width:100%">
+      <label>ID de la clase</label>
+      <input type="number" id="input-id-clase" placeholder="Ej: 1" style="font-size:15px"/>
+    </div>
+    <button class="btn-red" onclick="cargarLista()">Ver lista</button>
+    <button class="btn-ghost" onclick="cerrarModalListaSel()">Cancelar</button>
+    <p id="lista-error" style="color:#D42931;font-size:12px;text-align:center;display:none;"></p>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════ -->
+<script>
+// ─── Estado global ────────────────────────────────────────────────────────────
+let currentRole  = 'estudiante';
+let jwtToken     = null;
+let usuarioActual = null;
+let claseActivaId = null;  // ID de la última clase generada por el profesor
+let qrInterval   = null;
+let qrSegRestantes = 0;
+
+// ─── Inicialización ───────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  const token = sessionStorage.getItem('jwt');
+  if (token) {
+    verificarSesionGuardada(token);
+  }
+});
+
+async function verificarSesionGuardada(token) {
+  try {
+    const r = await apiFetch('/api/auth/verificar', 'GET', null, token);
+    if (r.valido) {
+      jwtToken     = token;
+      usuarioActual = r.usuario;
+      entrarAlApp();
+    }
+  } catch {}
+}
+
+// ─── Login ────────────────────────────────────────────────────────────────────
+function selectRole(r) {
+  currentRole = r;
+  document.getElementById('btn-est').classList.toggle('active',  r === 'estudiante');
+  document.getElementById('btn-prof').classList.toggle('active', r === 'profesor');
+}
+
+async function doLogin() {
+  const correo   = document.getElementById('input-correo').value.trim();
+  const password = document.getElementById('input-password').value;
+  const errEl    = document.getElementById('login-error');
+  const btn      = document.getElementById('btn-login');
+
+  errEl.style.display = 'none';
+  if (!correo || !password) {
+    mostrarLoginError('Completa todos los campos');
+    return;
+  }
+
+  btn.textContent = 'Ingresando...';
+  btn.disabled    = true;
+
+  try {
+    const data = await apiFetch('/api/auth/login', 'POST', { correo, password });
+
+    if (data.error) {
+      mostrarLoginError(data.error);
+      return;
+    }
+
+    // Verificar que el rol coincide con el botón seleccionado
+    if (data.usuario.rol !== currentRole) {
+      mostrarLoginError(
+        data.usuario.rol === 'profesor'
+          ? 'Esta cuenta es de profesor. Selecciona "Profesor".'
+          : 'Esta cuenta es de estudiante. Selecciona "Estudiante".'
+      );
+      return;
+    }
+
+    jwtToken      = data.token;
+    usuarioActual = data.usuario;
+    sessionStorage.setItem('jwt', jwtToken);
+    entrarAlApp();
+
+  } catch (err) {
+    mostrarLoginError('Error de conexión con el servidor');
+  } finally {
+    btn.textContent = 'Iniciar sesión';
+    btn.disabled    = false;
+  }
+}
+
+function mostrarLoginError(msg) {
+  const el = document.getElementById('login-error');
+  el.textContent    = msg;
+  el.style.display  = 'block';
+}
+
+function entrarAlApp() {
+  const rol = usuarioActual.rol;
+  actualizarSidebar();
+
+  if (rol === 'profesor') {
+    // Iniciales en el avatar
+    const ini = iniciales(usuarioActual.nombre);
+    document.getElementById('prof-avatar').textContent = ini;
+    goTo('s-profesor');
+    cargarRamos();
+  } else {
+    const ini = iniciales(usuarioActual.nombre);
+    document.getElementById('est-avatar').textContent = ini;
+    goTo('s-estudiante');
+  }
+}
+
+function doLogout() {
+  jwtToken = null;
+  usuarioActual = null;
+  sessionStorage.removeItem('jwt');
+  closeSidebar();
+  goTo('s-login');
+}
+
+// ─── Navegación ───────────────────────────────────────────────────────────────
+function goTo(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.getElementById(id).scrollTop = 0;
+}
+
+// ─── Sidebar ──────────────────────────────────────────────────────────────────
+function actualizarSidebar() {
+  if (!usuarioActual) return;
+  const isProf = usuarioActual.rol === 'profesor';
+  document.getElementById('sb-avatar').textContent    = iniciales(usuarioActual.nombre);
+  document.getElementById('sb-name').textContent      = usuarioActual.nombre;
+  document.getElementById('sb-role-label').textContent = isProf ? 'Profesor/a' : 'Estudiante';
+  document.getElementById('sb-email').textContent     = usuarioActual.correo;
+  document.getElementById('sb-rut').textContent       = usuarioActual.rut;
+  document.getElementById('sb-prof-extra').style.display = isProf ? 'block' : 'none';
+}
+
+function openSidebar() {
+  actualizarSidebar();
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('overlay').classList.add('show');
+}
+
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('overlay').classList.remove('show');
+}
+
+// ─── FLUJO ESTUDIANTE: registrar asistencia ───────────────────────────────────
+// ─── Escáner QR con cámara ────────────────────────────────────────────────────
+let html5QrScanner = null;
+
+function openCamera() {
+  document.getElementById('cam-error').style.display = 'none';
+  document.getElementById('input-token-qr').value = '';
+  document.getElementById('modal-camera').classList.add('show');
+
+  setTimeout(() => {
+    html5QrScanner = new Html5Qrcode('qr-reader');
+    html5QrScanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 220, height: 220 } },
+      async (decodedText) => {
+        // Extraer token de la URL escaneada
+        let tokenQR = decodedText;
+        try {
+          const url = new URL(decodedText);
+          tokenQR = url.searchParams.get('token') || decodedText;
+        } catch {}
+        await procesarToken(tokenQR);
+      },
+      () => {}
+    ).catch(err => {
+      document.getElementById('cam-status').textContent = 'Cámara no disponible — usa el token manual';
+      console.warn('Cámara:', err);
+    });
+  }, 300);
+}
+
+function closeCamera() {
+  if (html5QrScanner) {
+    html5QrScanner.stop().catch(() => {}).finally(() => {
+      html5QrScanner = null;
+    });
+  }
+  document.getElementById('modal-camera').classList.remove('show');
+}
+
+async function procesarToken(tokenQR) {
+  const errEl = document.getElementById('cam-error');
+  errEl.style.display = 'none';
+  if (!tokenQR) return;
+  try {
+    const data = await apiFetch('/api/asistencia/registrar', 'POST', { tokenQR });
+    if (data.error) {
+      errEl.textContent = data.error + (data.detalle ? `: ${data.detalle}` : '');
+      errEl.style.display = 'block';
+      return;
+    }
+    closeCamera();
+    showToast('toast-est', `✓ Asistencia registrada · ${data.registro.ramo}`);
+  } catch {
+    errEl.textContent = 'Error de conexión';
+    errEl.style.display = 'block';
+  }
+}
+
+async function registrarAsistenciaManual() {
+  const tokenQR = document.getElementById('input-token-qr').value.trim();
+  const errEl = document.getElementById('cam-error');
+  errEl.style.display = 'none';
+  if (!tokenQR) {
+    errEl.textContent = 'Ingresa el token QR';
+    errEl.style.display = 'block';
+    return;
+  }
+  await procesarToken(tokenQR);
+}
+
+// ─── FLUJO PROFESOR: generar QR ───────────────────────────────────────────────
+async function cargarRamos() {
+  try {
+    const data = await apiFetch('/api/qr/ramos', 'GET');
+    const sel  = document.getElementById('select-ramo');
+
+    if (!data.ramos || data.ramos.length === 0) {
+      sel.innerHTML = '<option value="">Sin ramos asignados</option>';
+      return;
+    }
+
+    sel.innerHTML = data.ramos.map(r =>
+      `<option value="${r.id_ramo}" data-seccion="${r.id_seccion || ''}">${r.nombre_ramo}</option>`
+    ).join('');
+
+  } catch {
+    document.getElementById('select-ramo').innerHTML =
+      '<option value="">Error al cargar ramos</option>';
+  }
+}
+
+// QR dinámico: se renueva cada 5s, válido 7s
+let qrRamoActual = null;
+let qrSeccionActual = null;
+let qrRamoNombre = '';
+let qrAutoRenewInterval = null;
+
+async function generateQR() {
+  const sel = document.getElementById('select-ramo');
+  const id_ramo = sel.value;
+  const id_seccion = sel.selectedOptions[0]?.dataset.seccion || null;
+
+  if (!id_ramo) {
+    showToast('toast-prof', '⚠️ Selecciona un ramo primero');
+    return;
+  }
+
+  qrRamoActual = parseInt(id_ramo);
+  qrSeccionActual = id_seccion ? parseInt(id_seccion) : null;
+  qrRamoNombre = sel.selectedOptions[0]?.text;
+
+  document.getElementById('modal-qr').classList.add('show');
+  document.getElementById('qr-modal-sub').textContent =
+    qrRamoNombre + ' · ' + new Date().toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit' });
+
+  await renovarQR();
+
+  // Renovar cada 5 segundos
+  clearInterval(qrAutoRenewInterval);
+  qrAutoRenewInterval = setInterval(renovarQR, 5000);
+}
+
+async function renovarQR() {
+  try {
+    const data = await apiFetch('/api/qr/generar', 'POST', {
+      id_ramo: qrRamoActual,
+      id_seccion: qrSeccionActual
+    });
+
+    if (data.error) {
+      showToast('toast-prof', '❌ ' + data.error);
+      return;
+    }
+
+    claseActivaId = data.id_clase;
+    document.getElementById('qr-img').src = data.imagenQR;
+    document.getElementById('qr-token-debug').textContent = 'Token: ' + data.token_qr;
+
+    // Countdown de 7 segundos (no cierra la ventana automáticamente, solo muestra el tiempo restante y muestra nuevo qr)
+     qrSegRestantes = data.duracion_seg;
+    document.getElementById('qr-seconds').textContent = qrSegRestantes;
+    clearInterval(qrInterval);
+    qrInterval = setInterval(() => {
+      qrSegRestantes--;
+      document.getElementById('qr-seconds').textContent = Math.max(0, qrSegRestantes);
+    }, 1000);
+
+  } catch {
+    showToast('toast-prof', '❌ Error renovando QR');
+  }
+}
+
+function closeQR() {
+  document.getElementById('modal-qr').classList.remove('show');
+  clearInterval(qrInterval);
+  clearInterval(qrAutoRenewInterval);
+  qrRamoActual = null;
+  qrSeccionActual = null;
+}
+
+// ─── FLUJO PROFESOR: ver lista ────────────────────────────────────────────────
+function abrirListaModal() {
+  // Si hay una clase activa, pre-llenar el ID
+  if (claseActivaId) {
+    document.getElementById('input-id-clase').value = claseActivaId;
+  }
+  document.getElementById('lista-error').style.display = 'none';
+  document.getElementById('modal-lista-sel').classList.add('show');
+}
+
+function cerrarModalListaSel() {
+  document.getElementById('modal-lista-sel').classList.remove('show');
+}
+
+async function cargarLista() {
+  const idClase = document.getElementById('input-id-clase').value;
+  const errEl   = document.getElementById('lista-error');
+  errEl.style.display = 'none';
+
+  if (!idClase) {
+    errEl.textContent   = 'Ingresa el ID de la clase';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  try {
+    const data = await apiFetch(`/api/asistencia/lista/${idClase}`, 'GET');
+
+    if (data.error) {
+      errEl.textContent   = data.error;
+      errEl.style.display = 'block';
+      return;
+    }
+
+    cerrarModalListaSel();
+    renderLista(data);
+    goTo('s-lista');
+
+  } catch {
+    errEl.textContent   = 'Error de conexión';
+    errEl.style.display = 'block';
+  }
+}
+
+function renderLista(data) {
+  const { clase, resumen, estudiantes } = data;
+
+  document.getElementById('lista-ramo-nombre').textContent =
+    `${clase.nombre_ramo}`;
+  document.getElementById('lista-fecha').textContent =
+    new Date(clase.fecha_hora).toLocaleDateString('es-CL', {
+      weekday:'long', day:'numeric', month:'long', hour:'2-digit', minute:'2-digit'
+    });
+  document.getElementById('cnt-present').textContent = resumen.presentes;
+  document.getElementById('cnt-absent').textContent  = resumen.ausentes;
+  document.getElementById('cnt-total').textContent   = resumen.total;
+
+  const listEl = document.getElementById('students-list');
+
+  if (estudiantes.length === 0) {
+    listEl.innerHTML = '<p style="text-align:center;color:#ABABAB;padding:2rem;font-size:14px;">Sin estudiantes inscritos</p>';
+    return;
+  }
+
+  listEl.innerHTML = estudiantes.map((est, i) => `
+    <div class="student-row">
+      <span class="st-num">${String(i + 1).padStart(2, '0')}</span>
+      <div class="st-info">
+        <p class="st-name">${est.nombre}</p>
+        <p class="st-rut">${est.rut}</p>
+      </div>
+      <button class="attend-btn ${est.estado === 'presente' ? 'att-present' : 'att-absent'}"
+              data-id="${est.id_asistencia || ''}"
+              data-est="${est.id}"
+              onclick="toggleAttend(this, ${clase.id})">
+        ${est.estado === 'presente' ? '✓' : '✕'}
+      </button>
+    </div>
+  `).join('');
+}
+
+async function toggleAttend(btn, idClase) {
+  const idAsistencia = btn.dataset.id;
+  const esPresente   = btn.textContent.trim() === '✓';
+  const nuevoEstado  = esPresente ? 'ausente' : 'presente';
+
+  // Actualización optimista en UI
+  btn.textContent = nuevoEstado === 'presente' ? '✓' : '✕';
+  btn.className   = `attend-btn ${nuevoEstado === 'presente' ? 'att-present' : 'att-absent'}`;
+
+  try {
+    if (idAsistencia) {
+      // Ya existe el registro → PATCH
+      await apiFetch(`/api/asistencia/${idAsistencia}`, 'PATCH', { estado: nuevoEstado });
+    }
+    // Actualizar contadores
+    const presentes = document.querySelectorAll('.att-present').length;
+    const ausentes  = document.querySelectorAll('.att-absent').length;
+    document.getElementById('cnt-present').textContent = presentes;
+    document.getElementById('cnt-absent').textContent  = ausentes;
+  } catch {
+    // Revertir si falla
+    btn.textContent = esPresente ? '✓' : '✕';
+    btn.className   = `attend-btn ${esPresente ? 'att-present' : 'att-absent'}`;
+  }
+}
+
+// ─── Utilidades ───────────────────────────────────────────────────────────────
+async function apiFetch(url, method = 'GET', body = null, token = null) {
+  const headers = { 'Content-Type': 'application/json' };
+  const tkn = token || jwtToken;
+  if (tkn) headers['Authorization'] = `Bearer ${tkn}`;
+
+  const opts = { method, headers };
+  if (body) opts.body = JSON.stringify(body);
+
+  const r    = await fetch(url, opts);
+  const data = await r.json();
+  return data;
+}
+
+function showToast(id, msg) {
+  const t = document.getElementById(id);
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+function iniciales(nombre) {
+  if (!nombre) return '?';
+  return nombre.split(' ').slice(0, 2).map(p => p[0]).join('').toUpperCase();
+}
+
+// Enter en login
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.getElementById('s-login').classList.contains('active')) {
+    doLogin();
+  }
+});
+</script>
+</body>
+</html>

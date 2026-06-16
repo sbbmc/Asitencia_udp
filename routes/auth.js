@@ -1,26 +1,40 @@
-const express  = require('express');
-const router   = express.Router();
-const jwt      = require('jsonwebtoken');
-const bcrypt   = require('bcryptjs');
-const { query }                        = require('../db');
-const { JWT_SECRET, JWT_EXPIRES }      = require('../middleware/auth');
+const express   = require('express');
+const router    = express.Router();
+const jwt       = require('jsonwebtoken');
+const bcrypt    = require('bcryptjs');
+const rateLimit = require('express-rate-limit');
+const { query }                   = require('../db');
+const { JWT_SECRET, JWT_EXPIRES } = require('../middleware/auth');
+
+// ── Rate limit específico para login ──────────────────────────────────────────
+// Máximo 10 intentos cada 15 minutos por IP. Corta ataques de fuerza bruta.
+const limiterLogin = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos de login. Intenta en 15 minutos.' }
+});
 
 /**
  * POST /api/auth/login
  * Body: { correo, password }
- *
- * Busca el usuario en public.usuarios por correo,
- * valida bcrypt y devuelve JWT + datos del perfil.
  */
-router.post('/login', async (req, res) => {
+router.post('/login', limiterLogin, async (req, res) => {
   const { correo, password } = req.body;
 
+  // Validación básica de entrada
   if (!correo || !password) {
     return res.status(400).json({ error: 'Correo y contraseña son requeridos' });
   }
+  if (typeof correo !== 'string' || typeof password !== 'string') {
+    return res.status(400).json({ error: 'Formato de datos inválido' });
+  }
+  if (password.length > 128) {
+    return res.status(400).json({ error: 'Formato de datos inválido' });
+  }
 
   try {
-    // Traer usuario + ramo del profesor si aplica
     const { rows } = await query(
       `SELECT u.id, u.rut, u.nombre, u.correo, u.password_hash, u.rol
        FROM public.usuarios u
@@ -29,16 +43,18 @@ router.post('/login', async (req, res) => {
       [correo.toLowerCase().trim()]
     );
 
-    if (rows.length === 0) {
+    // Siempre hacer la comparación bcrypt aunque el usuario no exista.
+    // Esto evita timing attacks que permiten enumerar correos válidos.
+    const hashFallback = '$2a$10$invalidhashXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+    const hash  = rows[0]?.password_hash ?? hashFallback;
+    const valida = await bcrypt.compare(password, hash);
+
+    if (rows.length === 0 || !valida) {
+      // Mensaje genérico: no revelar si el correo existe o no
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
     const usuario = rows[0];
-    const valida  = await bcrypt.compare(password, usuario.password_hash);
-
-    if (!valida) {
-      return res.status(401).json({ error: 'Credenciales inválidas' });
-    }
 
     // Si es profesor, traer sus ramos
     let ramos = [];
@@ -70,6 +86,7 @@ router.post('/login', async (req, res) => {
 
   } catch (err) {
     console.error('Error en login:', err);
+    // No filtrar detalles del error al cliente
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 });

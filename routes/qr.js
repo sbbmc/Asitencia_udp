@@ -4,6 +4,7 @@ const QRCode   = require('qrcode');
 const { v4: uuidv4 } = require('uuid');
 const { query }                        = require('../db');
 const { verificarToken, soloProfesor } = require('../middleware/auth');
+const { generarCodigoVerbal }          = require('../utils/validacion');
 
 const DURACION_SEG = 7; // 7 segundos de validez por QR
 
@@ -15,7 +16,7 @@ const DURACION_SEG = 7; // 7 segundos de validez por QR
  * Body: { id_ramo, id_seccion }
  */
 router.post('/generar', verificarToken, soloProfesor, async (req, res) => {
-  const { id_ramo, id_seccion } = req.body;
+  const { id_ramo, id_seccion, lat, lon } = req.body;
 
   if (!id_ramo) {
     return res.status(400).json({ error: 'id_ramo es requerido' });
@@ -45,19 +46,23 @@ router.post('/generar', verificarToken, soloProfesor, async (req, res) => {
 
     let insertRes;
     if (claseExistente.rows.length > 0) {
-      // Actualizar solo el token y expiración
+      // Actualizar solo el token y expiración.
+      // codigo_verbal NO se vuelve a generar (el profesor ya lo dijo en voz alta).
+      // lat/lon solo se completan si todavía no estaban definidos.
       insertRes = await query(
-        `UPDATE public.clases SET token_qr = $1, expira_at = $2
-         WHERE id = $3
-         RETURNING id, fecha_hora, token_qr, expira_at`,
-        [tokenQR, expiraAt, claseExistente.rows[0].id]
+        `UPDATE public.clases SET token_qr = $1, expira_at = $2,
+                lat = COALESCE(lat, $3), lon = COALESCE(lon, $4)
+         WHERE id = $5
+         RETURNING id, fecha_hora, token_qr, expira_at, codigo_verbal, lat, lon, radio_metros`,
+        [tokenQR, expiraAt, lat ?? null, lon ?? null, claseExistente.rows[0].id]
       );
     } else {
+      const codigoVerbal = generarCodigoVerbal();
       insertRes = await query(
-        `INSERT INTO public.clases (id_ramo, id_seccion, fecha_hora, token_qr, expira_at)
-         VALUES ($1, $2, NOW(), $3, $4)
-         RETURNING id, fecha_hora, token_qr, expira_at`,
-        [id_ramo, id_seccion || null, tokenQR, expiraAt]
+        `INSERT INTO public.clases (id_ramo, id_seccion, fecha_hora, token_qr, expira_at, codigo_verbal, lat, lon, radio_metros)
+         VALUES ($1, $2, NOW(), $3, $4, $5, $6, $7, $8)
+         RETURNING id, fecha_hora, token_qr, expira_at, codigo_verbal, lat, lon, radio_metros`,
+        [id_ramo, id_seccion || null, tokenQR, expiraAt, codigoVerbal, lat ?? null, lon ?? null, 100]
       );
     }
 
@@ -80,7 +85,10 @@ router.post('/generar', verificarToken, soloProfesor, async (req, res) => {
       duracion_seg:    DURACION_SEG,
       tiempoRestanteMs: DURACION_SEG * 1000,
       imagenQR:        imagenBase64,
-      urlQR
+      urlQR,
+      codigo_verbal:   clase.codigo_verbal,
+      ubicacion_configurada: clase.lat != null && clase.lon != null,
+      radio_metros:    clase.radio_metros
     });
 
   } catch (err) {
@@ -118,7 +126,7 @@ router.get('/ramos', verificarToken, soloProfesor, async (req, res) => {
  */
 async function validarTokenQR(tokenQR) {
   const { rows } = await query(
-    `SELECT id, id_ramo, id_seccion, expira_at
+    `SELECT id, id_ramo, id_seccion, expira_at, codigo_verbal, lat, lon, radio_metros
      FROM public.clases
      WHERE token_qr = $1
      LIMIT 1`,

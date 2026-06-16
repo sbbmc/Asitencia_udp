@@ -52,8 +52,9 @@
     <div class="sb-row"><span class="sb-key">Correo</span><span class="sb-val" id="sb-email">—</span></div>
     <div class="sb-row"><span class="sb-key">RUT</span><span class="sb-val" id="sb-rut">—</span></div>
   </div>
-  <div id="sb-prof-extra" style="display:none; margin-top:1.25rem;">
+  <div id="sb-prof-extra" style="display:none; margin-top:1.25rem; flex-direction:column; gap:0.75rem;">
     <button class="btn-outline-red" onclick="abrirListaModal(); closeSidebar()">📋 &nbsp;Lista de asistencia</button>
+    <button class="btn-outline-red" onclick="abrirReporteModal(); closeSidebar()">📊 &nbsp;Descargar reporte Excel</button>
   </div>
   <button class="sb-logout" onclick="doLogout()">Cerrar sesión</button>
 </div>
@@ -78,13 +79,22 @@
     </button>
   </div>
 
-  <!-- Modal cámara: ingreso manual del token para simular escaneo -->
+  <!-- Modal cámara estudiante -->
   <div class="modal-overlay" id="modal-camera">
     <div class="modal-box" style="padding:1.25rem;">
       <p class="modal-title">Escanear QR</p>
       <div id="qr-reader" style="width:100%;max-width:300px;margin:0 auto;border-radius:12px;overflow:hidden;"></div>
       <p id="cam-status" style="font-size:13px;color:#ABABAB;text-align:center;margin:0.75rem 0;">Apunta al código QR del profesor</p>
+
       <div class="field-group" style="width:100%;margin-top:0.5rem;">
+        <label>Código que dijo tu profesor</label>
+        <input type="text" id="input-codigo-verbal" placeholder="ej: 042" maxlength="3"
+               inputmode="numeric" style="font-size:18px;letter-spacing:6px;text-align:center;font-weight:600;"/>
+      </div>
+
+      <p id="geo-status-est" style="font-size:11px;color:#ABABAB;text-align:center;margin:0.4rem 0 0.75rem;"></p>
+
+      <div class="field-group" style="width:100%;margin-top:0.25rem;">
         <label>O pega el token manualmente</label>
         <input type="text" id="input-token-qr" placeholder="token del QR..." style="font-size:12px"/>
       </div>
@@ -111,22 +121,19 @@
 
   <div class="qr-section">
     <p class="qr-label">Iniciar registro de asistencia</p>
-
-    <!-- Selector de ramo (se llena dinámicamente) -->
     <div class="field-group" style="width:100%;max-width:320px">
       <label>Selecciona el ramo</label>
       <select id="select-ramo" style="border:1.5px solid #E5E5E5;border-radius:10px;padding:12px 14px;font-family:var(--font);font-size:15px;width:100%;background:#fff;color:#161616;outline:none;">
         <option value="">Cargando ramos...</option>
       </select>
     </div>
-
     <button class="btn-red btn-icon-btn" style="max-width:320px;width:100%" onclick="generateQR()">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3"/><path d="M17 17h3v3"/><path d="M14 20h3"/></svg>
       Generar código QR
     </button>
   </div>
 
-  <!-- Modal QR -->
+  <!-- Modal QR profesor -->
   <div class="modal-overlay" id="modal-qr">
     <div class="modal-box">
       <p class="modal-title">Código QR activo</p>
@@ -135,8 +142,15 @@
         <img id="qr-img" src="" alt="QR" style="width:200px;height:200px;display:block;"/>
       </div>
       <div class="qr-timer">🔄 Renueva en <strong id="qr-seconds">7</strong>s · válido 7s</div>
-      <!-- Token visible para pruebas (puedes remover en producción) -->
-      <p id="qr-token-debug" style="font-size:10px;color:#ABABAB;word-break:break-all;text-align:center;max-width:260px;"></p>
+
+      <div id="qr-codigo-verbal" style="margin-top:0.75rem;padding:0.75rem 1rem;border-radius:10px;background:#FFF4E5;border:1.5px solid #F0997B;text-align:center;display:none;">
+        <p style="font-size:11px;color:#993C1D;margin:0 0 4px;">Di este código en voz alta al curso</p>
+        <p style="font-size:28px;font-weight:700;letter-spacing:8px;color:#712B13;margin:0;" id="qr-codigo-valor">---</p>
+      </div>
+
+      <p id="qr-geo-status" style="font-size:11px;color:#ABABAB;text-align:center;margin:0.5rem 0 0;"></p>
+      <p id="qr-token-debug" style="font-size:10px;color:#ABABAB;word-break:break-all;text-align:center;max-width:260px;display:none;"></p>
+
       <button class="btn-ghost" onclick="closeQR()">Cerrar</button>
     </div>
   </div>
@@ -190,32 +204,48 @@
   </div>
 </div>
 
+<!-- ══════════════════════════════════════════
+     MODAL: descargar reporte Excel
+══════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-reporte">
+  <div class="modal-box">
+    <p class="modal-title">Reporte de asistencia</p>
+    <p class="modal-sub">Descarga el Excel con la asistencia global del periodo</p>
+    <div class="field-group" style="width:100%">
+      <label>Selecciona el ramo</label>
+      <select id="select-ramo-reporte" style="border:1.5px solid #E5E5E5;border-radius:10px;padding:12px 14px;font-family:var(--font);font-size:15px;width:100%;background:#fff;color:#161616;outline:none;">
+        <option value="">Cargando ramos...</option>
+      </select>
+    </div>
+    <button class="btn-red" id="btn-descargar-reporte" onclick="descargarReporte()">⬇️ &nbsp;Descargar Excel</button>
+    <button class="btn-ghost" onclick="cerrarReporteModal()">Cancelar</button>
+    <p id="reporte-error" style="color:#D42931;font-size:12px;text-align:center;display:none;"></p>
+  </div>
+</div>
 
 <!-- ══════════════════════════════════════════
      JAVASCRIPT
 ══════════════════════════════════════════ -->
 <script>
 // ─── Estado global ────────────────────────────────────────────────────────────
-let currentRole  = 'estudiante';
-let jwtToken     = null;
-let usuarioActual = null;
-let claseActivaId = null;  // ID de la última clase generada por el profesor
-let qrInterval   = null;
+let currentRole    = 'estudiante';
+let jwtToken       = null;
+let usuarioActual  = null;
+let claseActivaId  = null;
+let qrInterval     = null;
 let qrSegRestantes = 0;
 
 // ─── Inicialización ───────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   const token = sessionStorage.getItem('jwt');
-  if (token) {
-    verificarSesionGuardada(token);
-  }
+  if (token) verificarSesionGuardada(token);
 });
 
 async function verificarSesionGuardada(token) {
   try {
     const r = await apiFetch('/api/auth/verificar', 'GET', null, token);
     if (r.valido) {
-      jwtToken     = token;
+      jwtToken      = token;
       usuarioActual = r.usuario;
       entrarAlApp();
     }
@@ -232,10 +262,10 @@ function selectRole(r) {
 async function doLogin() {
   const correo   = document.getElementById('input-correo').value.trim();
   const password = document.getElementById('input-password').value;
-  const errEl    = document.getElementById('login-error');
   const btn      = document.getElementById('btn-login');
 
-  errEl.style.display = 'none';
+  document.getElementById('login-error').style.display = 'none';
+
   if (!correo || !password) {
     mostrarLoginError('Completa todos los campos');
     return;
@@ -252,7 +282,6 @@ async function doLogin() {
       return;
     }
 
-    // Verificar que el rol coincide con el botón seleccionado
     if (data.usuario.rol !== currentRole) {
       mostrarLoginError(
         data.usuario.rol === 'profesor'
@@ -267,7 +296,7 @@ async function doLogin() {
     sessionStorage.setItem('jwt', jwtToken);
     entrarAlApp();
 
-  } catch (err) {
+  } catch {
     mostrarLoginError('Error de conexión con el servidor');
   } finally {
     btn.textContent = 'Iniciar sesión';
@@ -277,29 +306,24 @@ async function doLogin() {
 
 function mostrarLoginError(msg) {
   const el = document.getElementById('login-error');
-  el.textContent    = msg;
-  el.style.display  = 'block';
+  el.textContent   = msg;
+  el.style.display = 'block';
 }
 
 function entrarAlApp() {
-  const rol = usuarioActual.rol;
   actualizarSidebar();
-
-  if (rol === 'profesor') {
-    // Iniciales en el avatar
-    const ini = iniciales(usuarioActual.nombre);
-    document.getElementById('prof-avatar').textContent = ini;
+  if (usuarioActual.rol === 'profesor') {
+    document.getElementById('prof-avatar').textContent = iniciales(usuarioActual.nombre);
     goTo('s-profesor');
     cargarRamos();
   } else {
-    const ini = iniciales(usuarioActual.nombre);
-    document.getElementById('est-avatar').textContent = ini;
+    document.getElementById('est-avatar').textContent = iniciales(usuarioActual.nombre);
     goTo('s-estudiante');
   }
 }
 
 function doLogout() {
-  jwtToken = null;
+  jwtToken      = null;
   usuarioActual = null;
   sessionStorage.removeItem('jwt');
   closeSidebar();
@@ -317,12 +341,13 @@ function goTo(id) {
 function actualizarSidebar() {
   if (!usuarioActual) return;
   const isProf = usuarioActual.rol === 'profesor';
-  document.getElementById('sb-avatar').textContent    = iniciales(usuarioActual.nombre);
-  document.getElementById('sb-name').textContent      = usuarioActual.nombre;
+  document.getElementById('sb-avatar').textContent     = iniciales(usuarioActual.nombre);
+  document.getElementById('sb-name').textContent       = usuarioActual.nombre;
   document.getElementById('sb-role-label').textContent = isProf ? 'Profesor/a' : 'Estudiante';
-  document.getElementById('sb-email').textContent     = usuarioActual.correo;
-  document.getElementById('sb-rut').textContent       = usuarioActual.rut;
-  document.getElementById('sb-prof-extra').style.display = isProf ? 'block' : 'none';
+  document.getElementById('sb-email').textContent      = usuarioActual.correo;
+  document.getElementById('sb-rut').textContent        = usuarioActual.rut;
+  const sbExtra = document.getElementById('sb-prof-extra');
+  sbExtra.style.display = isProf ? 'flex' : 'none';
 }
 
 function openSidebar() {
@@ -336,14 +361,44 @@ function closeSidebar() {
   document.getElementById('overlay').classList.remove('show');
 }
 
+// ─── SEGURIDAD: helper de geolocalización ────────────────────────────────────
+function obtenerUbicacion() {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      ()    => resolve(null),
+      { enableHighAccuracy: true, timeout: 5000 }
+    );
+  });
+}
+
 // ─── FLUJO ESTUDIANTE: registrar asistencia ───────────────────────────────────
-// ─── Escáner QR con cámara ────────────────────────────────────────────────────
 let html5QrScanner = null;
+let estLat         = null;
+let estLon         = null;
+let geoPromise     = null;
 
 function openCamera() {
-  document.getElementById('cam-error').style.display = 'none';
-  document.getElementById('input-token-qr').value = '';
+  document.getElementById('cam-error').style.display   = 'none';
+  document.getElementById('input-token-qr').value      = '';
+  document.getElementById('input-codigo-verbal').value = '';
   document.getElementById('modal-camera').classList.add('show');
+
+  const geoEl = document.getElementById('geo-status-est');
+  geoEl.textContent = 'Obteniendo ubicación...';
+  estLat = null;
+  estLon = null;
+
+  geoPromise = obtenerUbicacion().then((pos) => {
+    if (pos) {
+      estLat = pos.lat;
+      estLon = pos.lon;
+      geoEl.textContent = '📍 Ubicación lista';
+    } else {
+      geoEl.textContent = '⚠️ Sin acceso a ubicación';
+    }
+  });
 
   setTimeout(() => {
     html5QrScanner = new Html5Qrcode('qr-reader');
@@ -351,7 +406,6 @@ function openCamera() {
       { facingMode: 'environment' },
       { fps: 10, qrbox: { width: 220, height: 220 } },
       async (decodedText) => {
-        // Extraer token de la URL escaneada
         let tokenQR = decodedText;
         try {
           const url = new URL(decodedText);
@@ -360,47 +414,65 @@ function openCamera() {
         await procesarToken(tokenQR);
       },
       () => {}
-    ).catch(err => {
+    ).catch(() => {
       document.getElementById('cam-status').textContent = 'Cámara no disponible — usa el token manual';
-      console.warn('Cámara:', err);
     });
   }, 300);
 }
 
 function closeCamera() {
   if (html5QrScanner) {
-    html5QrScanner.stop().catch(() => {}).finally(() => {
-      html5QrScanner = null;
-    });
+    html5QrScanner.stop().catch(() => {}).finally(() => { html5QrScanner = null; });
   }
   document.getElementById('modal-camera').classList.remove('show');
+  estLat     = null;
+  estLon     = null;
+  geoPromise = null;
 }
 
 async function procesarToken(tokenQR) {
   const errEl = document.getElementById('cam-error');
   errEl.style.display = 'none';
   if (!tokenQR) return;
+
+  if (geoPromise) {
+    document.getElementById('geo-status-est').textContent = 'Esperando ubicación...';
+    await geoPromise;
+    geoPromise = null;
+  }
+
+  const codigoVerbal = document.getElementById('input-codigo-verbal').value.trim();
+
   try {
-    const data = await apiFetch('/api/asistencia/registrar', 'POST', { tokenQR });
+    const data = await apiFetch('/api/asistencia/registrar', 'POST', {
+      tokenQR,
+      codigoVerbal,
+      lat: estLat,
+      lon: estLon
+    });
+
     if (data.error) {
-      errEl.textContent = data.error + (data.detalle ? `: ${data.detalle}` : '');
+      errEl.textContent   = data.error + (data.detalle ? `: ${data.detalle}` : '');
       errEl.style.display = 'block';
       return;
     }
+
     closeCamera();
-    showToast('toast-est', `✓ Asistencia registrada · ${data.registro.ramo}`);
+    const sufijo = data.registro?.revision_requerida ? ' (pendiente de revisión)' : '';
+    showToast('toast-est', `✓ Asistencia registrada · ${data.registro.ramo}${sufijo}`);
+
   } catch {
-    errEl.textContent = 'Error de conexión';
+    errEl.textContent   = 'Error de conexión';
     errEl.style.display = 'block';
   }
 }
 
 async function registrarAsistenciaManual() {
   const tokenQR = document.getElementById('input-token-qr').value.trim();
-  const errEl = document.getElementById('cam-error');
+  const errEl   = document.getElementById('cam-error');
   errEl.style.display = 'none';
   if (!tokenQR) {
-    errEl.textContent = 'Ingresa el token QR';
+    errEl.textContent   = 'Ingresa el token QR';
     errEl.style.display = 'block';
     return;
   }
@@ -412,31 +484,28 @@ async function cargarRamos() {
   try {
     const data = await apiFetch('/api/qr/ramos', 'GET');
     const sel  = document.getElementById('select-ramo');
-
     if (!data.ramos || data.ramos.length === 0) {
       sel.innerHTML = '<option value="">Sin ramos asignados</option>';
       return;
     }
-
     sel.innerHTML = data.ramos.map(r =>
       `<option value="${r.id_ramo}" data-seccion="${r.id_seccion || ''}">${r.nombre_ramo}</option>`
     ).join('');
-
   } catch {
-    document.getElementById('select-ramo').innerHTML =
-      '<option value="">Error al cargar ramos</option>';
+    document.getElementById('select-ramo').innerHTML = '<option value="">Error al cargar ramos</option>';
   }
 }
 
-// QR dinámico: se renueva cada 5s, válido 7s
-let qrRamoActual = null;
-let qrSeccionActual = null;
-let qrRamoNombre = '';
+let qrRamoActual        = null;
+let qrSeccionActual     = null;
+let qrRamoNombre        = '';
 let qrAutoRenewInterval = null;
+let qrProfLat           = null;
+let qrProfLon           = null;
 
 async function generateQR() {
-  const sel = document.getElementById('select-ramo');
-  const id_ramo = sel.value;
+  const sel        = document.getElementById('select-ramo');
+  const id_ramo    = sel.value;
   const id_seccion = sel.selectedOptions[0]?.dataset.seccion || null;
 
   if (!id_ramo) {
@@ -444,17 +513,28 @@ async function generateQR() {
     return;
   }
 
-  qrRamoActual = parseInt(id_ramo);
+  qrRamoActual    = parseInt(id_ramo);
   qrSeccionActual = id_seccion ? parseInt(id_seccion) : null;
-  qrRamoNombre = sel.selectedOptions[0]?.text;
+  qrRamoNombre    = sel.selectedOptions[0]?.text;
 
   document.getElementById('modal-qr').classList.add('show');
   document.getElementById('qr-modal-sub').textContent =
     qrRamoNombre + ' · ' + new Date().toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit' });
 
-  await renovarQR();
+  const geoEl = document.getElementById('qr-geo-status');
+  geoEl.textContent = 'Obteniendo ubicación de la sala...';
+  const pos = await obtenerUbicacion();
+  if (pos) {
+    qrProfLat = pos.lat;
+    qrProfLon = pos.lon;
+    geoEl.textContent = '📍 Ubicación de la sala registrada';
+  } else {
+    qrProfLat = null;
+    qrProfLon = null;
+    geoEl.textContent = '⚠️ Sin ubicación (capa de geolocalización deshabilitada)';
+  }
 
-  // Renovar cada 5 segundos
+  await renovarQR();
   clearInterval(qrAutoRenewInterval);
   qrAutoRenewInterval = setInterval(renovarQR, 5000);
 }
@@ -462,8 +542,10 @@ async function generateQR() {
 async function renovarQR() {
   try {
     const data = await apiFetch('/api/qr/generar', 'POST', {
-      id_ramo: qrRamoActual,
-      id_seccion: qrSeccionActual
+      id_ramo:    qrRamoActual,
+      id_seccion: qrSeccionActual,
+      lat: qrProfLat,
+      lon: qrProfLon
     });
 
     if (data.error) {
@@ -473,10 +555,13 @@ async function renovarQR() {
 
     claseActivaId = data.id_clase;
     document.getElementById('qr-img').src = data.imagenQR;
-    document.getElementById('qr-token-debug').textContent = 'Token: ' + data.token_qr;
 
-    // Countdown de 7 segundos (no cierra la ventana automáticamente, solo muestra el tiempo restante y muestra nuevo qr)
-     qrSegRestantes = data.duracion_seg;
+    if (data.codigo_verbal) {
+      document.getElementById('qr-codigo-valor').textContent = data.codigo_verbal;
+      document.getElementById('qr-codigo-verbal').style.display = 'block';
+    }
+
+    qrSegRestantes = data.duracion_seg;
     document.getElementById('qr-seconds').textContent = qrSegRestantes;
     clearInterval(qrInterval);
     qrInterval = setInterval(() => {
@@ -491,18 +576,18 @@ async function renovarQR() {
 
 function closeQR() {
   document.getElementById('modal-qr').classList.remove('show');
+  document.getElementById('qr-codigo-verbal').style.display = 'none';
   clearInterval(qrInterval);
   clearInterval(qrAutoRenewInterval);
-  qrRamoActual = null;
+  qrRamoActual    = null;
   qrSeccionActual = null;
+  qrProfLat       = null;
+  qrProfLon       = null;
 }
 
 // ─── FLUJO PROFESOR: ver lista ────────────────────────────────────────────────
 function abrirListaModal() {
-  // Si hay una clase activa, pre-llenar el ID
-  if (claseActivaId) {
-    document.getElementById('input-id-clase').value = claseActivaId;
-  }
+  if (claseActivaId) document.getElementById('input-id-clase').value = claseActivaId;
   document.getElementById('lista-error').style.display = 'none';
   document.getElementById('modal-lista-sel').classList.add('show');
 }
@@ -524,17 +609,14 @@ async function cargarLista() {
 
   try {
     const data = await apiFetch(`/api/asistencia/lista/${idClase}`, 'GET');
-
     if (data.error) {
       errEl.textContent   = data.error;
       errEl.style.display = 'block';
       return;
     }
-
     cerrarModalListaSel();
     renderLista(data);
     goTo('s-lista');
-
   } catch {
     errEl.textContent   = 'Error de conexión';
     errEl.style.display = 'block';
@@ -544,8 +626,7 @@ async function cargarLista() {
 function renderLista(data) {
   const { clase, resumen, estudiantes } = data;
 
-  document.getElementById('lista-ramo-nombre').textContent =
-    `${clase.nombre_ramo}`;
+  document.getElementById('lista-ramo-nombre').textContent = clase.nombre_ramo;
   document.getElementById('lista-fecha').textContent =
     new Date(clase.fecha_hora).toLocaleDateString('es-CL', {
       weekday:'long', day:'numeric', month:'long', hour:'2-digit', minute:'2-digit'
@@ -567,6 +648,9 @@ function renderLista(data) {
       <div class="st-info">
         <p class="st-name">${est.nombre}</p>
         <p class="st-rut">${est.rut}</p>
+        ${est.revision_requerida
+          ? '<p style="font-size:10px;color:#D48C00;margin:0;">⚠️ Pendiente de revisión</p>'
+          : ''}
       </div>
       <button class="attend-btn ${est.estado === 'presente' ? 'att-present' : 'att-absent'}"
               data-id="${est.id_asistencia || ''}"
@@ -583,24 +667,92 @@ async function toggleAttend(btn, idClase) {
   const esPresente   = btn.textContent.trim() === '✓';
   const nuevoEstado  = esPresente ? 'ausente' : 'presente';
 
-  // Actualización optimista en UI
   btn.textContent = nuevoEstado === 'presente' ? '✓' : '✕';
   btn.className   = `attend-btn ${nuevoEstado === 'presente' ? 'att-present' : 'att-absent'}`;
 
   try {
     if (idAsistencia) {
-      // Ya existe el registro → PATCH
       await apiFetch(`/api/asistencia/${idAsistencia}`, 'PATCH', { estado: nuevoEstado });
     }
-    // Actualizar contadores
     const presentes = document.querySelectorAll('.att-present').length;
     const ausentes  = document.querySelectorAll('.att-absent').length;
     document.getElementById('cnt-present').textContent = presentes;
     document.getElementById('cnt-absent').textContent  = ausentes;
   } catch {
-    // Revertir si falla
     btn.textContent = esPresente ? '✓' : '✕';
     btn.className   = `attend-btn ${esPresente ? 'att-present' : 'att-absent'}`;
+  }
+}
+
+// ─── FLUJO PROFESOR: reporte Excel ────────────────────────────────────────────
+function abrirReporteModal() {
+  document.getElementById('reporte-error').style.display = 'none';
+
+  // Copiar opciones del selector principal de ramos
+  const selOrigen  = document.getElementById('select-ramo');
+  const selReporte = document.getElementById('select-ramo-reporte');
+
+  if (selOrigen && selOrigen.options.length > 0 && selOrigen.options[0].value !== '') {
+    selReporte.innerHTML = selOrigen.innerHTML;
+  } else {
+    selReporte.innerHTML = '<option value="">Sin ramos disponibles</option>';
+  }
+
+  document.getElementById('modal-reporte').classList.add('show');
+}
+
+function cerrarReporteModal() {
+  document.getElementById('modal-reporte').classList.remove('show');
+}
+
+async function descargarReporte() {
+  const idRamo = document.getElementById('select-ramo-reporte').value;
+  const errEl  = document.getElementById('reporte-error');
+  const btn    = document.getElementById('btn-descargar-reporte');
+  errEl.style.display = 'none';
+
+  if (!idRamo) {
+    errEl.textContent   = 'Selecciona un ramo';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  btn.textContent = '⏳ Generando...';
+  btn.disabled    = true;
+
+  try {
+    const response = await fetch(`/api/asistencia/reporte/${idRamo}`, {
+      method:  'GET',
+      headers: { 'Authorization': `Bearer ${jwtToken}` }
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      errEl.textContent   = data.error || 'Error generando reporte';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    const blob     = await response.blob();
+    const url      = URL.createObjectURL(blob);
+    const a        = document.createElement('a');
+    const filename = response.headers.get('Content-Disposition')
+      ?.match(/filename="(.+)"/)?.[1] || 'reporte_asistencia.xlsx';
+
+    a.href     = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    cerrarReporteModal();
+    showToast('toast-prof', '✓ Reporte descargado correctamente');
+
+  } catch {
+    errEl.textContent   = 'Error de conexión';
+    errEl.style.display = 'block';
+  } finally {
+    btn.textContent = '⬇️ &nbsp;Descargar Excel';
+    btn.disabled    = false;
   }
 }
 
@@ -609,13 +761,10 @@ async function apiFetch(url, method = 'GET', body = null, token = null) {
   const headers = { 'Content-Type': 'application/json' };
   const tkn = token || jwtToken;
   if (tkn) headers['Authorization'] = `Bearer ${tkn}`;
-
   const opts = { method, headers };
   if (body) opts.body = JSON.stringify(body);
-
-  const r    = await fetch(url, opts);
-  const data = await r.json();
-  return data;
+  const r = await fetch(url, opts);
+  return await r.json();
 }
 
 function showToast(id, msg) {
@@ -630,7 +779,6 @@ function iniciales(nombre) {
   return nombre.split(' ').slice(0, 2).map(p => p[0]).join('').toUpperCase();
 }
 
-// Enter en login
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && document.getElementById('s-login').classList.contains('active')) {
     doLogin();

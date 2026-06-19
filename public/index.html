@@ -8,6 +8,225 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="styles.css"/>
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    /* ── Panel visualizar asistencia ─────────────────────────────────── */
+    .panel-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 200;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+    .panel-overlay.show { opacity: 1; pointer-events: all; }
+
+    .panel-drawer {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: #fff;
+      border-radius: 20px 20px 0 0;
+      z-index: 201;
+      max-height: 92vh;
+      display: flex; flex-direction: column;
+      transform: translateY(100%);
+      transition: transform 0.3s cubic-bezier(0.32,0.72,0,1);
+      overflow: hidden;
+    }
+    .panel-drawer.open { transform: translateY(0); }
+
+    .panel-handle {
+      width: 36px; height: 4px;
+      background: #E0E0E0;
+      border-radius: 2px;
+      margin: 12px auto 0;
+      flex-shrink: 0;
+    }
+
+    .panel-head {
+      padding: 16px 20px 12px;
+      flex-shrink: 0;
+      border-bottom: 1px solid #F0F0F0;
+    }
+    .panel-head-row {
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .panel-title {
+      font-size: 17px; font-weight: 700; color: #161616; margin: 0;
+    }
+    .panel-close {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: #F4F4F4; border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; color: #555; flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    .panel-close:hover { background: #EAEAEA; }
+
+    .panel-filters {
+      padding: 16px 20px 12px;
+      display: flex; flex-direction: column; gap: 12px;
+      flex-shrink: 0;
+      border-bottom: 1px solid #F0F0F0;
+    }
+
+    .filter-label {
+      font-size: 11px; font-weight: 600; color: #ABABAB;
+      letter-spacing: 0.06em; text-transform: uppercase;
+      margin: 0 0 5px;
+    }
+
+    .select-clase {
+      width: 100%;
+      border: 1.5px solid #E5E5E5;
+      border-radius: 10px;
+      padding: 11px 14px;
+      font-family: inherit; font-size: 15px;
+      color: #161616; background: #fff;
+      outline: none;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23ABABAB' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      padding-right: 36px;
+      transition: border-color 0.15s;
+    }
+    .select-clase:focus { border-color: #D42931; }
+
+    .date-input-wrap { position: relative; }
+    .date-input {
+      width: 100%; box-sizing: border-box;
+      border: 1.5px solid #E5E5E5; border-radius: 10px;
+      padding: 11px 14px;
+      font-family: inherit; font-size: 15px; color: #161616;
+      outline: none; background: #fff;
+      transition: border-color 0.15s;
+    }
+    .date-input:focus { border-color: #D42931; }
+    .date-hint {
+      font-size: 11px; color: #ABABAB; margin: 4px 0 0;
+    }
+
+    .btn-buscar {
+      width: 100%;
+      background: #D42931; color: #fff;
+      border: none; border-radius: 10px;
+      padding: 13px; font-family: inherit;
+      font-size: 15px; font-weight: 600;
+      cursor: pointer; transition: background 0.15s;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn-buscar:hover { background: #B52028; }
+    .btn-buscar:disabled { background: #F0A0A3; cursor: not-allowed; }
+
+    /* ── Resultados dentro del panel ─────────────────────────────── */
+    .panel-results {
+      flex: 1; overflow-y: auto;
+      padding: 0 0 24px;
+    }
+
+    .results-header {
+      padding: 14px 20px 10px;
+      display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; background: #fff;
+      border-bottom: 1px solid #F8F8F8;
+      z-index: 1;
+    }
+    .results-clase-nombre {
+      font-size: 14px; font-weight: 700; color: #161616; margin: 0;
+    }
+    .results-fecha {
+      font-size: 12px; color: #ABABAB; margin: 2px 0 0;
+    }
+
+    .results-chips {
+      display: flex; gap: 6px;
+    }
+    .chip {
+      font-size: 12px; font-weight: 600;
+      padding: 3px 10px; border-radius: 20px;
+    }
+    .chip-green { background: #E6F4EA; color: #1A7A3C; }
+    .chip-red   { background: #FDE8E8; color: #D42931; }
+    .chip-gray  { background: #F4F4F4; color: #888; }
+
+    /* estado vacío / cargando / error */
+    .panel-empty {
+      padding: 40px 20px;
+      text-align: center;
+      color: #ABABAB; font-size: 14px;
+      line-height: 1.6;
+    }
+    .panel-empty-icon { font-size: 32px; margin-bottom: 10px; }
+
+    /* fila de estudiante en el panel */
+    .panel-student-row {
+      display: flex; align-items: center;
+      padding: 11px 20px;
+      border-bottom: 1px solid #F8F8F8;
+      gap: 12px;
+    }
+    .panel-student-row:last-child { border-bottom: none; }
+
+    .ps-num {
+      font-size: 11px; font-weight: 600; color: #CECECE;
+      width: 22px; text-align: center; flex-shrink: 0;
+    }
+    .ps-info { flex: 1; min-width: 0; }
+    .ps-name {
+      font-size: 14px; font-weight: 600; color: #161616;
+      margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .ps-email {
+      font-size: 11px; color: #ABABAB; margin: 2px 0 0;
+    }
+    .ps-revision {
+      font-size: 10px; color: #D48C00; margin: 2px 0 0;
+    }
+
+    .estado-badge {
+      font-size: 12px; font-weight: 700;
+      padding: 4px 10px; border-radius: 20px;
+      flex-shrink: 0; white-space: nowrap;
+    }
+    .eb-presente    { background: #E6F4EA; color: #1A7A3C; }
+    .eb-ausente     { background: #FDE8E8; color: #D42931; }
+    .eb-justificado { background: #FFF3CD; color: #856404; }
+
+    .ps-score {
+      font-size: 10px; color: #ABABAB;
+      margin: 3px 0 0; display: block;
+    }
+
+    /* botones toggle estado */
+    .btn-toggle {
+      font-size: 11px; font-weight: 600;
+      padding: 4px 10px; border-radius: 20px;
+      border: none; cursor: pointer;
+      transition: all 0.15s; white-space: nowrap;
+    }
+    .btn-toggle:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-toggle-presente {
+      background: #E6F4EA; color: #1A7A3C;
+    }
+    .btn-toggle-presente:hover { background: #C8EAD0; }
+    .btn-toggle-ausente {
+      background: #FDE8E8; color: #D42931;
+    }
+    .btn-toggle-ausente:hover { background: #FAD0D0; }
+
+    /* skeleton loader */
+    .skel-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 20px; border-bottom: 1px solid #F8F8F8;
+    }
+    .skel { background: #F0F0F0; border-radius: 6px; animation: shimmer 1.4s infinite; }
+    .skel-circle { width: 22px; height: 22px; border-radius: 50%; }
+    .skel-line { height: 12px; }
+    @keyframes shimmer {
+      0%   { opacity: 1; }
+      50%  { opacity: 0.4; }
+      100% { opacity: 1; }
+    }
+  </style>
 </head>
 <body>
 
@@ -53,7 +272,7 @@
     <div class="sb-row"><span class="sb-key">RUT</span><span class="sb-val" id="sb-rut">—</span></div>
   </div>
   <div id="sb-prof-extra" style="display:none; margin-top:1.25rem; flex-direction:column; gap:0.75rem;">
-    <button class="btn-outline-red" onclick="abrirListaModal(); closeSidebar()">📋 &nbsp;Lista de asistencia</button>
+    <button class="btn-outline-red" onclick="abrirPanelAsistencia(); closeSidebar()">📋 &nbsp;Visualizar asistencia</button>
     <button class="btn-outline-red" onclick="abrirReporteModal(); closeSidebar()">📊 &nbsp;Descargar reporte Excel</button>
   </div>
   <button class="sb-logout" onclick="doLogout()">Cerrar sesión</button>
@@ -70,7 +289,6 @@
     <span class="topbar-title">AsistUDP</span>
     <div style="width:36px"></div>
   </div>
-
   <div class="qr-section">
     <p class="qr-label">Registrar asistencia</p>
     <button class="btn-red btn-icon-btn" onclick="openCamera()">
@@ -78,22 +296,18 @@
       Escanear código QR
     </button>
   </div>
-
   <!-- Modal cámara estudiante -->
   <div class="modal-overlay" id="modal-camera">
     <div class="modal-box" style="padding:1.25rem;">
       <p class="modal-title">Escanear QR</p>
       <div id="qr-reader" style="width:100%;max-width:300px;margin:0 auto;border-radius:12px;overflow:hidden;"></div>
       <p id="cam-status" style="font-size:13px;color:#ABABAB;text-align:center;margin:0.75rem 0;">Apunta al código QR del profesor</p>
-
       <div class="field-group" style="width:100%;margin-top:0.5rem;">
         <label>Código que dijo tu profesor</label>
         <input type="text" id="input-codigo-verbal" placeholder="ej: 042" maxlength="3"
                inputmode="numeric" style="font-size:18px;letter-spacing:6px;text-align:center;font-weight:600;"/>
       </div>
-
       <p id="geo-status-est" style="font-size:11px;color:#ABABAB;text-align:center;margin:0.4rem 0 0.75rem;"></p>
-
       <div class="field-group" style="width:100%;margin-top:0.25rem;">
         <label>O pega el token manualmente</label>
         <input type="text" id="input-token-qr" placeholder="token del QR..." style="font-size:12px"/>
@@ -103,7 +317,6 @@
       <p id="cam-error" style="color:#D42931;font-size:12px;text-align:center;display:none;"></p>
     </div>
   </div>
-
   <div class="toast" id="toast-est"></div>
 </div>
 
@@ -118,7 +331,6 @@
     <span class="topbar-title">AsistUDP</span>
     <div style="width:36px"></div>
   </div>
-
   <div class="qr-section">
     <p class="qr-label">Iniciar registro de asistencia</p>
     <div class="field-group" style="width:100%;max-width:320px">
@@ -132,7 +344,6 @@
       Generar código QR
     </button>
   </div>
-
   <!-- Modal QR profesor -->
   <div class="modal-overlay" id="modal-qr">
     <div class="modal-box">
@@ -142,65 +353,67 @@
         <img id="qr-img" src="" alt="QR" style="width:200px;height:200px;display:block;"/>
       </div>
       <div class="qr-timer">🔄 Renueva en <strong id="qr-seconds">7</strong>s · válido 7s</div>
-
       <div id="qr-codigo-verbal" style="margin-top:0.75rem;padding:0.75rem 1rem;border-radius:10px;background:#FFF4E5;border:1.5px solid #F0997B;text-align:center;display:none;">
         <p style="font-size:11px;color:#993C1D;margin:0 0 4px;">Di este código en voz alta al curso</p>
         <p style="font-size:28px;font-weight:700;letter-spacing:8px;color:#712B13;margin:0;" id="qr-codigo-valor">---</p>
       </div>
-
       <p id="qr-geo-status" style="font-size:11px;color:#ABABAB;text-align:center;margin:0.5rem 0 0;"></p>
       <p id="qr-token-debug" style="font-size:10px;color:#ABABAB;word-break:break-all;text-align:center;max-width:260px;display:none;"></p>
-
       <button class="btn-ghost" onclick="closeQR()">Cerrar</button>
     </div>
   </div>
-
   <div class="toast" id="toast-prof"></div>
 </div>
 
 <!-- ══════════════════════════════════════════
-     PANTALLA LISTA ASISTENCIA
+     PANEL DRAWER: visualizar asistencia
 ══════════════════════════════════════════ -->
-<div class="screen" id="s-lista">
-  <div class="topbar">
-    <button class="back-btn" onclick="goTo('s-profesor')">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+<div class="panel-overlay" id="panel-overlay" onclick="cerrarPanelAsistencia()"></div>
+<div class="panel-drawer" id="panel-asistencia">
+  <div class="panel-handle"></div>
+
+  <div class="panel-head">
+    <div class="panel-head-row">
+      <p class="panel-title">Visualizar asistencia</p>
+      <button class="panel-close" onclick="cerrarPanelAsistencia()">✕</button>
+    </div>
+  </div>
+
+  <div class="panel-filters">
+    <!-- Selector de clase -->
+    <div>
+      <p class="filter-label">Clase</p>
+      <select class="select-clase" id="panel-select-clase">
+        <option value="">Cargando clases...</option>
+      </select>
+    </div>
+
+    <!-- Selector de fecha -->
+    <div>
+      <p class="filter-label">Fecha de la sesión</p>
+      <div class="date-input-wrap">
+        <input
+          type="date"
+          class="date-input"
+          id="panel-fecha"
+          placeholder="YYYY-MM-DD"
+        />
+      </div>
+      <p class="date-hint">Formato: AAAA-MM-DD · ej: 2026-06-15</p>
+    </div>
+
+    <button class="btn-buscar" id="btn-buscar-asistencia" onclick="buscarAsistencia()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+      Buscar asistencia
     </button>
-    <span class="topbar-title">Asistencia</span>
-    <div style="width:36px"></div>
   </div>
 
-  <div class="lista-header">
-    <p class="lista-ramo" id="lista-ramo-nombre">—</p>
-    <p class="lista-fecha" id="lista-fecha">—</p>
-    <div class="lista-resumen">
-      <div class="res-item"><span class="res-num res-green" id="cnt-present">0</span><span class="res-lbl">Presentes</span></div>
-      <div class="res-sep"></div>
-      <div class="res-item"><span class="res-num res-red" id="cnt-absent">0</span><span class="res-lbl">Ausentes</span></div>
-      <div class="res-sep"></div>
-      <div class="res-item"><span class="res-num res-gray" id="cnt-total">0</span><span class="res-lbl">Total</span></div>
+  <!-- Zona de resultados -->
+  <div class="panel-results" id="panel-results">
+    <div class="panel-empty">
+      <div class="panel-empty-icon">📋</div>
+      Selecciona una clase y una fecha<br>para ver la asistencia de esa sesión.
     </div>
-  </div>
-
-  <div class="students-list" id="students-list">
-    <p style="text-align:center;color:#ABABAB;padding:2rem;font-size:14px;">Cargando lista...</p>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════
-     MODAL: seleccionar clase para ver lista
-══════════════════════════════════════════ -->
-<div class="modal-overlay" id="modal-lista-sel">
-  <div class="modal-box">
-    <p class="modal-title">Ver lista de asistencia</p>
-    <p class="modal-sub">Selecciona la clase activa</p>
-    <div class="field-group" style="width:100%">
-      <label>ID de la clase</label>
-      <input type="number" id="input-id-clase" placeholder="Ej: 1" style="font-size:15px"/>
-    </div>
-    <button class="btn-red" onclick="cargarLista()">Ver lista</button>
-    <button class="btn-ghost" onclick="cerrarModalListaSel()">Cancelar</button>
-    <p id="lista-error" style="color:#D42931;font-size:12px;text-align:center;display:none;"></p>
   </div>
 </div>
 
@@ -239,6 +452,10 @@ let qrSegRestantes = 0;
 window.addEventListener('DOMContentLoaded', () => {
   const token = sessionStorage.getItem('jwt');
   if (token) verificarSesionGuardada(token);
+
+  // Poner fecha de hoy por defecto en el datepicker del panel
+  const hoy = new Date().toISOString().split('T')[0];
+  document.getElementById('panel-fecha').value = hoy;
 });
 
 async function verificarSesionGuardada(token) {
@@ -265,22 +482,14 @@ async function doLogin() {
   const btn      = document.getElementById('btn-login');
 
   document.getElementById('login-error').style.display = 'none';
-
-  if (!correo || !password) {
-    mostrarLoginError('Completa todos los campos');
-    return;
-  }
+  if (!correo || !password) { mostrarLoginError('Completa todos los campos'); return; }
 
   btn.textContent = 'Ingresando...';
   btn.disabled    = true;
 
   try {
     const data = await apiFetch('/api/auth/login', 'POST', { correo, password });
-
-    if (data.error) {
-      mostrarLoginError(data.error);
-      return;
-    }
+    if (data.error) { mostrarLoginError(data.error); return; }
 
     if (data.usuario.rol !== currentRole) {
       mostrarLoginError(
@@ -295,7 +504,6 @@ async function doLogin() {
     usuarioActual = data.usuario;
     sessionStorage.setItem('jwt', jwtToken);
     entrarAlApp();
-
   } catch {
     mostrarLoginError('Error de conexión con el servidor');
   } finally {
@@ -361,7 +569,7 @@ function closeSidebar() {
   document.getElementById('overlay').classList.remove('show');
 }
 
-// ─── SEGURIDAD: helper de geolocalización ────────────────────────────────────
+// ─── Geolocalización ──────────────────────────────────────────────────────────
 function obtenerUbicacion() {
   return new Promise((resolve) => {
     if (!navigator.geolocation) return resolve(null);
@@ -373,11 +581,9 @@ function obtenerUbicacion() {
   });
 }
 
-// ─── FLUJO ESTUDIANTE: registrar asistencia ───────────────────────────────────
+// ─── FLUJO ESTUDIANTE ─────────────────────────────────────────────────────────
 let html5QrScanner = null;
-let estLat         = null;
-let estLon         = null;
-let geoPromise     = null;
+let estLat = null, estLon = null, geoPromise = null;
 
 function openCamera() {
   document.getElementById('cam-error').style.display   = 'none';
@@ -387,17 +593,11 @@ function openCamera() {
 
   const geoEl = document.getElementById('geo-status-est');
   geoEl.textContent = 'Obteniendo ubicación...';
-  estLat = null;
-  estLon = null;
+  estLat = null; estLon = null;
 
   geoPromise = obtenerUbicacion().then((pos) => {
-    if (pos) {
-      estLat = pos.lat;
-      estLon = pos.lon;
-      geoEl.textContent = '📍 Ubicación lista';
-    } else {
-      geoEl.textContent = '⚠️ Sin acceso a ubicación';
-    }
+    if (pos) { estLat = pos.lat; estLon = pos.lon; geoEl.textContent = '📍 Ubicación lista'; }
+    else      { geoEl.textContent = '⚠️ Sin acceso a ubicación'; }
   });
 
   setTimeout(() => {
@@ -407,10 +607,7 @@ function openCamera() {
       { fps: 10, qrbox: { width: 220, height: 220 } },
       async (decodedText) => {
         let tokenQR = decodedText;
-        try {
-          const url = new URL(decodedText);
-          tokenQR = url.searchParams.get('token') || decodedText;
-        } catch {}
+        try { const url = new URL(decodedText); tokenQR = url.searchParams.get('token') || decodedText; } catch {}
         await procesarToken(tokenQR);
       },
       () => {}
@@ -425,9 +622,7 @@ function closeCamera() {
     html5QrScanner.stop().catch(() => {}).finally(() => { html5QrScanner = null; });
   }
   document.getElementById('modal-camera').classList.remove('show');
-  estLat     = null;
-  estLon     = null;
-  geoPromise = null;
+  estLat = null; estLon = null; geoPromise = null;
 }
 
 async function procesarToken(tokenQR) {
@@ -445,10 +640,7 @@ async function procesarToken(tokenQR) {
 
   try {
     const data = await apiFetch('/api/asistencia/registrar', 'POST', {
-      tokenQR,
-      codigoVerbal,
-      lat: estLat,
-      lon: estLon
+      tokenQR, codigoVerbal, lat: estLat, lon: estLon
     });
 
     if (data.error) {
@@ -458,9 +650,8 @@ async function procesarToken(tokenQR) {
     }
 
     closeCamera();
-    const sufijo = data.registro?.revision_requerida ? ' (pendiente de revisión)' : '';
-    showToast('toast-est', `✓ Asistencia registrada · ${data.registro.ramo}${sufijo}`);
-
+    const sufijo = data.revision ? ' (pendiente de revisión)' : '';
+    showToast('toast-est', `✓ Asistencia registrada${sufijo}`);
   } catch {
     errEl.textContent   = 'Error de conexión';
     errEl.style.display = 'block';
@@ -471,66 +662,53 @@ async function registrarAsistenciaManual() {
   const tokenQR = document.getElementById('input-token-qr').value.trim();
   const errEl   = document.getElementById('cam-error');
   errEl.style.display = 'none';
-  if (!tokenQR) {
-    errEl.textContent   = 'Ingresa el token QR';
-    errEl.style.display = 'block';
-    return;
-  }
+  if (!tokenQR) { errEl.textContent = 'Ingresa el token QR'; errEl.style.display = 'block'; return; }
   await procesarToken(tokenQR);
 }
 
 // ─── FLUJO PROFESOR: generar QR ───────────────────────────────────────────────
 async function cargarRamos() {
   try {
-    const data = await apiFetch('/api/qr/ramos', 'GET');
+    const data = await apiFetch('/api/qr/clases', 'GET');
     const sel  = document.getElementById('select-ramo');
-    if (!data.ramos || data.ramos.length === 0) {
-      sel.innerHTML = '<option value="">Sin ramos asignados</option>';
+    if (!data.clases || data.clases.length === 0) {
+      sel.innerHTML = '<option value="">Sin clases asignadas</option>';
       return;
     }
-    sel.innerHTML = data.ramos.map(r =>
-      `<option value="${r.id_ramo}" data-seccion="${r.id_seccion || ''}">${r.nombre_ramo}</option>`
+    sel.innerHTML = data.clases.map(c =>
+      `<option value="${c.id}">${c.nombre}</option>`
     ).join('');
   } catch {
-    document.getElementById('select-ramo').innerHTML = '<option value="">Error al cargar ramos</option>';
+    document.getElementById('select-ramo').innerHTML = '<option value="">Error al cargar clases</option>';
   }
 }
 
-let qrRamoActual        = null;
-let qrSeccionActual     = null;
-let qrRamoNombre        = '';
+let qrClaseNombre = '';
+let qrClaseId = null;
 let qrAutoRenewInterval = null;
-let qrProfLat           = null;
-let qrProfLon           = null;
+let qrProfLat = null, qrProfLon = null;
 
 async function generateQR() {
-  const sel        = document.getElementById('select-ramo');
-  const id_ramo    = sel.value;
-  const id_seccion = sel.selectedOptions[0]?.dataset.seccion || null;
+  const sel    = document.getElementById('select-ramo');
+  const claseId = sel.value;
 
-  if (!id_ramo) {
-    showToast('toast-prof', '⚠️ Selecciona un ramo primero');
-    return;
-  }
+  if (!claseId) { showToast('toast-prof', '⚠️ Selecciona una clase primero'); return; }
 
-  qrRamoActual    = parseInt(id_ramo);
-  qrSeccionActual = id_seccion ? parseInt(id_seccion) : null;
-  qrRamoNombre    = sel.selectedOptions[0]?.text;
+  qrClaseNombre = sel.selectedOptions[0]?.text;
+  qrClaseId    = sel.value;
 
   document.getElementById('modal-qr').classList.add('show');
   document.getElementById('qr-modal-sub').textContent =
-    qrRamoNombre + ' · ' + new Date().toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit' });
+    qrClaseNombre + ' · ' + new Date().toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit' });
 
   const geoEl = document.getElementById('qr-geo-status');
   geoEl.textContent = 'Obteniendo ubicación de la sala...';
   const pos = await obtenerUbicacion();
   if (pos) {
-    qrProfLat = pos.lat;
-    qrProfLon = pos.lon;
+    qrProfLat = pos.lat; qrProfLon = pos.lon;
     geoEl.textContent = '📍 Ubicación de la sala registrada';
   } else {
-    qrProfLat = null;
-    qrProfLon = null;
+    qrProfLat = null; qrProfLon = null;
     geoEl.textContent = '⚠️ Sin ubicación (capa de geolocalización deshabilitada)';
   }
 
@@ -539,26 +717,39 @@ async function generateQR() {
   qrAutoRenewInterval = setInterval(renovarQR, 5000);
 }
 
+let renovandoQR = false; // evita llamadas concurrentes si una tarda más de 5s
+
 async function renovarQR() {
+  if (renovandoQR) return; // ya hay una renovación en curso, no dispares otra
+  renovandoQR = true;
+  try {
+    await _renovarQRInterno();
+  } finally {
+    renovandoQR = false;
+  }
+}
+
+async function _renovarQRInterno() {
   try {
     const data = await apiFetch('/api/qr/generar', 'POST', {
-      id_ramo:    qrRamoActual,
-      id_seccion: qrSeccionActual,
+      clase_id: qrClaseId,
+
       lat: qrProfLat,
       lon: qrProfLon
     });
 
-    if (data.error) {
-      showToast('toast-prof', '❌ ' + data.error);
-      return;
-    }
+    if (data.error) { showToast('toast-prof', '❌ ' + data.error); return; }
 
     claseActivaId = data.id_clase;
     document.getElementById('qr-img').src = data.imagenQR;
 
-    if (data.codigo_verbal) {
+    // El código verbal se muestra solo la primera vez y queda fijo.
+    // No se actualiza en renovaciones posteriores para que los alumnos
+    // puedan anotarlo sin apuro.
+    const bloqueVerbal = document.getElementById('qr-codigo-verbal');
+    if (data.codigo_verbal && bloqueVerbal.style.display === 'none') {
       document.getElementById('qr-codigo-valor').textContent = data.codigo_verbal;
-      document.getElementById('qr-codigo-verbal').style.display = 'block';
+      bloqueVerbal.style.display = 'block';
     }
 
     qrSegRestantes = data.duracion_seg;
@@ -568,7 +759,6 @@ async function renovarQR() {
       qrSegRestantes--;
       document.getElementById('qr-seconds').textContent = Math.max(0, qrSegRestantes);
     }, 1000);
-
   } catch {
     showToast('toast-prof', '❌ Error renovando QR');
   }
@@ -579,125 +769,209 @@ function closeQR() {
   document.getElementById('qr-codigo-verbal').style.display = 'none';
   clearInterval(qrInterval);
   clearInterval(qrAutoRenewInterval);
-  qrRamoActual    = null;
-  qrSeccionActual = null;
-  qrProfLat       = null;
-  qrProfLon       = null;
+  qrProfLat = null; qrProfLon = null;
 }
 
-// ─── FLUJO PROFESOR: ver lista ────────────────────────────────────────────────
-function abrirListaModal() {
-  if (claseActivaId) document.getElementById('input-id-clase').value = claseActivaId;
-  document.getElementById('lista-error').style.display = 'none';
-  document.getElementById('modal-lista-sel').classList.add('show');
+// ─── PANEL: visualizar asistencia ────────────────────────────────────────────
+async function abrirPanelAsistencia() {
+  // Resetear resultados
+  document.getElementById('panel-results').innerHTML = `
+    <div class="panel-empty">
+      <div class="panel-empty-icon">📋</div>
+      Selecciona una clase y una fecha<br>para ver la asistencia de esa sesión.
+    </div>`;
+
+  // Cargar clases del profesor en el selector
+  await cargarClasesEnPanel();
+
+  document.getElementById('panel-overlay').classList.add('show');
+  document.getElementById('panel-asistencia').classList.add('open');
 }
 
-function cerrarModalListaSel() {
-  document.getElementById('modal-lista-sel').classList.remove('show');
+function cerrarPanelAsistencia() {
+  document.getElementById('panel-overlay').classList.remove('show');
+  document.getElementById('panel-asistencia').classList.remove('open');
 }
 
-async function cargarLista() {
-  const idClase = document.getElementById('input-id-clase').value;
-  const errEl   = document.getElementById('lista-error');
-  errEl.style.display = 'none';
-
-  if (!idClase) {
-    errEl.textContent   = 'Ingresa el ID de la clase';
-    errEl.style.display = 'block';
-    return;
-  }
-
+async function cargarClasesEnPanel() {
+  const sel = document.getElementById('panel-select-clase');
+  sel.innerHTML = '<option value="">Cargando...</option>';
   try {
-    const data = await apiFetch(`/api/asistencia/lista/${idClase}`, 'GET');
-    if (data.error) {
-      errEl.textContent   = data.error;
-      errEl.style.display = 'block';
+    const data = await apiFetch('/api/qr/clases', 'GET');
+    if (!data.clases || data.clases.length === 0) {
+      sel.innerHTML = '<option value="">Sin clases disponibles</option>';
       return;
     }
-    cerrarModalListaSel();
-    renderLista(data);
-    goTo('s-lista');
+    sel.innerHTML = '<option value="">— Elige una clase —</option>' +
+      data.clases.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
   } catch {
-    errEl.textContent   = 'Error de conexión';
-    errEl.style.display = 'block';
+    sel.innerHTML = '<option value="">Error al cargar clases</option>';
   }
 }
 
-function renderLista(data) {
-  const { clase, resumen, estudiantes } = data;
+async function buscarAsistencia() {
+  panelClaseId  = document.getElementById('panel-select-clase').value;
+  const claseId = panelClaseId;
+  const fecha   = document.getElementById('panel-fecha').value;
+  const btn     = document.getElementById('btn-buscar-asistencia');
+  const results = document.getElementById('panel-results');
 
-  document.getElementById('lista-ramo-nombre').textContent = clase.nombre_ramo;
-  document.getElementById('lista-fecha').textContent =
-    new Date(clase.fecha_hora).toLocaleDateString('es-CL', {
-      weekday:'long', day:'numeric', month:'long', hour:'2-digit', minute:'2-digit'
-    });
-  document.getElementById('cnt-present').textContent = resumen.presentes;
-  document.getElementById('cnt-absent').textContent  = resumen.ausentes;
-  document.getElementById('cnt-total').textContent   = resumen.total;
-
-  const listEl = document.getElementById('students-list');
-
-  if (estudiantes.length === 0) {
-    listEl.innerHTML = '<p style="text-align:center;color:#ABABAB;padding:2rem;font-size:14px;">Sin estudiantes inscritos</p>';
+  if (!claseId) {
+    results.innerHTML = `<div class="panel-empty"><div class="panel-empty-icon">⚠️</div>Selecciona una clase primero.</div>`;
+    return;
+  }
+  if (!fecha) {
+    results.innerHTML = `<div class="panel-empty"><div class="panel-empty-icon">⚠️</div>Ingresa una fecha válida.</div>`;
     return;
   }
 
-  listEl.innerHTML = estudiantes.map((est, i) => `
-    <div class="student-row">
-      <span class="st-num">${String(i + 1).padStart(2, '0')}</span>
-      <div class="st-info">
-        <p class="st-name">${est.nombre}</p>
-        <p class="st-rut">${est.rut}</p>
-        ${est.revision_requerida
-          ? '<p style="font-size:10px;color:#D48C00;margin:0;">⚠️ Pendiente de revisión</p>'
-          : ''}
+  // Skeleton loader
+  btn.disabled = true;
+  btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 0.8s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Buscando...`;
+  results.innerHTML = [1,2,3,4,5].map(() => `
+    <div class="skel-row">
+      <div class="skel skel-circle"></div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+        <div class="skel skel-line" style="width:60%"></div>
+        <div class="skel skel-line" style="width:35%"></div>
       </div>
-      <button class="attend-btn ${est.estado === 'presente' ? 'att-present' : 'att-absent'}"
-              data-id="${est.id_asistencia || ''}"
-              data-est="${est.id}"
-              onclick="toggleAttend(this, ${clase.id})">
-        ${est.estado === 'presente' ? '✓' : '✕'}
-      </button>
-    </div>
-  `).join('');
-}
-
-async function toggleAttend(btn, idClase) {
-  const idAsistencia = btn.dataset.id;
-  const esPresente   = btn.textContent.trim() === '✓';
-  const nuevoEstado  = esPresente ? 'ausente' : 'presente';
-
-  btn.textContent = nuevoEstado === 'presente' ? '✓' : '✕';
-  btn.className   = `attend-btn ${nuevoEstado === 'presente' ? 'att-present' : 'att-absent'}`;
+      <div class="skel skel-line" style="width:64px;height:24px;border-radius:20px"></div>
+    </div>`).join('');
 
   try {
-    if (idAsistencia) {
-      await apiFetch(`/api/asistencia/${idAsistencia}`, 'PATCH', { estado: nuevoEstado });
+    const data = await apiFetch(`/api/asistencia/lista/${claseId}?fecha=${fecha}`, 'GET');
+
+    if (data.error) {
+      results.innerHTML = `<div class="panel-empty"><div class="panel-empty-icon">❌</div>${data.error}</div>`;
+      return;
     }
-    const presentes = document.querySelectorAll('.att-present').length;
-    const ausentes  = document.querySelectorAll('.att-absent').length;
-    document.getElementById('cnt-present').textContent = presentes;
-    document.getElementById('cnt-absent').textContent  = ausentes;
+
+    renderPanelResultados(data, fecha);
   } catch {
-    btn.textContent = esPresente ? '✓' : '✕';
-    btn.className   = `attend-btn ${esPresente ? 'att-present' : 'att-absent'}`;
+    results.innerHTML = `<div class="panel-empty"><div class="panel-empty-icon">❌</div>Error de conexión con el servidor.</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg> Buscar asistencia`;
+  }
+}
+
+function renderPanelResultados(data, fecha) {
+  const { clase, resumen, estudiantes } = data;
+  const results = document.getElementById('panel-results');
+
+  const [anio, mes, dia] = fecha.split('-');
+  const fechaDisplay = `${dia}/${mes}/${anio}`;
+  const nombreClase = clase.nombre || document.getElementById('panel-select-clase').selectedOptions[0]?.text || '—';
+
+  if (!estudiantes || estudiantes.length === 0) {
+    results.innerHTML = `
+      <div class="results-header">
+        <div><p class="results-clase-nombre">${nombreClase}</p><p class="results-fecha">${fechaDisplay}</p></div>
+      </div>
+      <div class="panel-empty"><div class="panel-empty-icon">🔍</div>Sin estudiantes inscritos.</div>`;
+    return;
+  }
+
+  // Contar chips dinámicamente
+  const contarChips = () => {
+    const filas = results.querySelectorAll('.panel-student-row');
+    let presentes = 0, ausentes = 0;
+    filas.forEach(f => {
+      const badge = f.querySelector('.estado-badge');
+      if (badge?.classList.contains('eb-presente') || badge?.classList.contains('eb-justificado')) presentes++;
+      else ausentes++;
+    });
+    results.querySelector('.chip-green').textContent = `✓ ${presentes}`;
+    results.querySelector('.chip-red').textContent   = `✕ ${ausentes}`;
+  };
+
+  results.innerHTML = `
+    <div class="results-header" id="panel-results-header">
+      <div>
+        <p class="results-clase-nombre">${nombreClase}</p>
+        <p class="results-fecha">${fechaDisplay}</p>
+      </div>
+      <div class="results-chips">
+        <span class="chip chip-green">✓ ${resumen.presentes}</span>
+        <span class="chip chip-red">✕ ${resumen.ausentes}</span>
+        <span class="chip chip-gray">${resumen.total}</span>
+      </div>
+    </div>
+    ${estudiantes.map((est, i) => {
+      const esPresente   = est.estado === 'presente' || est.estado === 'justificado';
+      const estadoClass  = est.estado === 'presente' ? 'eb-presente' : est.estado === 'justificado' ? 'eb-justificado' : 'eb-ausente';
+      const estadoLabel  = est.estado === 'presente' ? 'Presente'   : est.estado === 'justificado' ? 'Justificado'    : 'Ausente';
+      const scoreHtml    = est.confianza_score != null ? `<span class="ps-score">Score: ${est.confianza_score}/100</span>` : '';
+      const revHtml      = est.revision_requerida ? `<p class="ps-revision">⚠️ Pendiente revisión</p>` : '';
+      const btnLabel     = esPresente ? 'Marcar ausente' : 'Marcar presente';
+      const btnClass     = esPresente ? 'btn-toggle-ausente' : 'btn-toggle-presente';
+
+      return `
+        <div class="panel-student-row" id="fila-${est.inscripcion_id}">
+          <span class="ps-num">${String(i + 1).padStart(2, '0')}</span>
+          <div class="ps-info">
+            <p class="ps-name">${est.nombre}</p>
+            <p class="ps-email">${est.email || ''}</p>
+            ${scoreHtml}${revHtml}
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0">
+            <span class="estado-badge ${estadoClass}" id="badge-${est.inscripcion_id}">${estadoLabel}</span>
+            <button class="btn-toggle ${btnClass}" id="btn-${est.inscripcion_id}"
+              onclick="toggleEstadoPanel('${est.inscripcion_id}', '${panelClaseId}')">
+              ${btnLabel}
+            </button>
+          </div>
+        </div>`;
+    }).join('')}`;
+
+  // Guardar referencia al contador para actualizarlo al togglear
+  results._contarChips = contarChips;
+}
+
+async function toggleEstadoPanel(inscripcion_id, clase_id) {
+  const badge = document.getElementById(`badge-${inscripcion_id}`);
+  const btn   = document.getElementById(`btn-${inscripcion_id}`);
+  if (!badge || !btn) return;
+
+  const esPresente  = badge.classList.contains('eb-presente') || badge.classList.contains('eb-justificado');
+  const nuevoEstado = esPresente ? 'ausente' : 'presente';
+
+  btn.disabled     = true;
+  btn.textContent  = '...';
+
+  try {
+    const data = await apiFetch(`/api/asistencia/estado/${inscripcion_id}`, 'PATCH', {
+      estado: nuevoEstado,
+      clase_id
+    });
+
+    if (data.error) { showToast('toast-prof', '❌ ' + data.error); return; }
+
+    // Actualizar badge
+    badge.className   = `estado-badge ${nuevoEstado === 'presente' ? 'eb-presente' : 'eb-ausente'}`;
+    badge.textContent = nuevoEstado === 'presente' ? 'Presente' : 'Ausente';
+
+    // Actualizar botón
+    btn.className   = `btn-toggle ${nuevoEstado === 'presente' ? 'btn-toggle-ausente' : 'btn-toggle-presente'}`;
+    btn.textContent = nuevoEstado === 'presente' ? 'Marcar ausente' : 'Marcar presente';
+
+    // Actualizar chips del header
+    const results = document.getElementById('panel-results');
+    if (results._contarChips) results._contarChips();
+
+  } catch {
+    showToast('toast-prof', '❌ Error de conexión');
+  } finally {
+    btn.disabled = false;
   }
 }
 
 // ─── FLUJO PROFESOR: reporte Excel ────────────────────────────────────────────
 function abrirReporteModal() {
   document.getElementById('reporte-error').style.display = 'none';
-
-  // Copiar opciones del selector principal de ramos
   const selOrigen  = document.getElementById('select-ramo');
   const selReporte = document.getElementById('select-ramo-reporte');
-
-  if (selOrigen && selOrigen.options.length > 0 && selOrigen.options[0].value !== '') {
-    selReporte.innerHTML = selOrigen.innerHTML;
-  } else {
-    selReporte.innerHTML = '<option value="">Sin ramos disponibles</option>';
-  }
-
+  selReporte.innerHTML = selOrigen?.innerHTML || '<option value="">Sin clases disponibles</option>';
   document.getElementById('modal-reporte').classList.add('show');
 }
 
@@ -706,13 +980,13 @@ function cerrarReporteModal() {
 }
 
 async function descargarReporte() {
-  const idRamo = document.getElementById('select-ramo-reporte').value;
-  const errEl  = document.getElementById('reporte-error');
-  const btn    = document.getElementById('btn-descargar-reporte');
+  const idClase = document.getElementById('select-ramo-reporte').value;
+  const errEl   = document.getElementById('reporte-error');
+  const btn     = document.getElementById('btn-descargar-reporte');
   errEl.style.display = 'none';
 
-  if (!idRamo) {
-    errEl.textContent   = 'Selecciona un ramo';
+  if (!idClase) {
+    errEl.textContent   = 'Selecciona una clase';
     errEl.style.display = 'block';
     return;
   }
@@ -721,8 +995,8 @@ async function descargarReporte() {
   btn.disabled    = true;
 
   try {
-    const response = await fetch(`/api/asistencia/reporte/${idRamo}`, {
-      method:  'GET',
+    const response = await fetch(`/api/asistencia/reporte/${idClase}`, {
+      method: 'GET',
       headers: { 'Authorization': `Bearer ${jwtToken}` }
     });
 
@@ -738,15 +1012,10 @@ async function descargarReporte() {
     const a        = document.createElement('a');
     const filename = response.headers.get('Content-Disposition')
       ?.match(/filename="(.+)"/)?.[1] || 'reporte_asistencia.xlsx';
-
-    a.href     = url;
-    a.download = filename;
-    a.click();
+    a.href = url; a.download = filename; a.click();
     URL.revokeObjectURL(url);
-
     cerrarReporteModal();
     showToast('toast-prof', '✓ Reporte descargado correctamente');
-
   } catch {
     errEl.textContent   = 'Error de conexión';
     errEl.style.display = 'block';
@@ -780,10 +1049,13 @@ function iniciales(nombre) {
 }
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && document.getElementById('s-login').classList.contains('active')) {
-    doLogin();
-  }
+  if (e.key === 'Enter' && document.getElementById('s-login').classList.contains('active')) doLogin();
 });
+
+// Animación del spinner en el botón buscar
+const spinStyle = document.createElement('style');
+spinStyle.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
+document.head.appendChild(spinStyle);
 </script>
 </body>
 </html>

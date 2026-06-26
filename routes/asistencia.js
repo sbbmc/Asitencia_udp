@@ -1,11 +1,15 @@
-const express   = require('express');
+const express    = require('express');
 const Asistencia = require('../models/Asistencia');
-const router    = express.Router();
-const ExcelJS   = require('exceljs');
-const { query } = require('../db');
+const router     = express.Router();
+const ExcelJS    = require('exceljs');
+const { query }  = require('../db');
 const { verificarToken, soloEstudiante, soloProfesor } = require('../middleware/auth');
 const { validarTokenQR }    = require('./qr');
 const { calcularConfianza } = require('../utils/validacion');
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  RUTAS ESTUDIANTE
+// ══════════════════════════════════════════════════════════════════════════════
 
 /**
  * POST /api/asistencia/registrar
@@ -18,12 +22,6 @@ router.post('/registrar', verificarToken, soloEstudiante, async (req, res) => {
     return res.status(400).json({ error: 'tokenQR es requerido' });
   }
 
-  const latNum = (lat !== undefined && lat !== null) ? parseFloat(lat) : null;
-  const lonNum = (lon !== undefined && lon !== null) ? parseFloat(lon) : null;
-  if ((latNum !== null && isNaN(latNum)) || (lonNum !== null && isNaN(lonNum))) {
-    return res.status(400).json({ error: 'Coordenadas inválidas' });
-  }
-
   try {
     const validacion = await validarTokenQR(tokenQR);
     if (!validacion.valido) {
@@ -32,7 +30,6 @@ router.post('/registrar', verificarToken, soloEstudiante, async (req, res) => {
 
     const { clase } = validacion;
 
-    // Buscar inscripción del estudiante en esta clase
     const inscritoRes = await query(
       `SELECT id FROM public.inscripciones
        WHERE usuario_id = $1 AND clase_id = $2`,
@@ -48,32 +45,24 @@ router.post('/registrar', verificarToken, soloEstudiante, async (req, res) => {
     const { score, detalle } = calcularConfianza({
       clase,
       codigoVerbal: typeof codigoVerbal === 'string' ? codigoVerbal.trim() : null,
-      lat: latNum,
-      lon: lonNum
+      lat: typeof lat === 'number' ? lat : null,
+      lon: typeof lon === 'number' ? lon : null,
     });
 
     if (score < 60) {
       return res.status(403).json({
         error: 'No se pudo verificar tu presencia en la sala',
-        detalle: 'Revisa el código que indicó tu profesor y que tu ubicación esté activada'
+        detalle: 'Revisa el código que indicó tu profesor'
       });
     }
 
     const revisionRequerida = score < 70;
 
-    // Buscar registro de HOY (fecha_dia) para este alumno en esta clase.
-    // Si ya existe (ej: el QR de inicio creó 'ausente', o llegó tarde y
-    // ya tenía registro) → lo actualiza a 'presente'.
-    // Si no existe → lo crea.
     const fechaDiaHoy = new Date().toLocaleDateString('es-CL', { timeZone: 'America/Santiago' })
-      .split('-').reverse().join('-'); // DD-MM-YYYY -> YYYY-MM-DD
+      .split('-').reverse().join('-');
 
     const registro = await Asistencia.findOneAndUpdate(
-      {
-        inscripcion_id: inscripcion_id,
-        clase_id:       clase.id,
-        fecha_dia:      fechaDiaHoy
-      },
+      { inscripcion_id, clase_id: clase.id, fecha_dia: fechaDiaHoy },
       {
         $set: {
           estado:             'presente',
@@ -92,17 +81,14 @@ router.post('/registrar', verificarToken, soloEstudiante, async (req, res) => {
       { upsert: true, new: true }
     );
 
-    // nombre de la clase ya está en clases.nombre, sin necesidad de JOIN a ramos
-    console.log(
-      `✅ Asistencia: ${estudiante.nombre} → ${clase.nombre} · score=${score}${revisionRequerida ? ' [revisión]' : ''}`
-    );
+    console.log(`✅ Asistencia: ${estudiante.nombre} → ${clase.nombre} · score=${score}${revisionRequerida ? ' [revisión]' : ''}`);
 
     return res.json({
-      mensaje:      'Asistencia registrada',
-      estado:       registro.estado,
-      fecha:        registro.fecha_registro,
+      mensaje:  'Asistencia registrada',
+      estado:   registro.estado,
+      fecha:    registro.fecha_registro,
       score,
-      revision:     revisionRequerida
+      revision: revisionRequerida
     });
 
   } catch (err) {
@@ -112,22 +98,124 @@ router.post('/registrar', verificarToken, soloEstudiante, async (req, res) => {
 });
 
 /**
- * GET /api/asistencia/lista/:clase_id?fecha=YYYY-MM-DD
+ * GET /api/asistencia/mis-clases
+ * Devuelve las clases en que está inscrito el estudiante autenticado.
+ */
+router.get('/mis-clases', verificarToken, soloEstudiante, async (req, res) => {
+  try {
+    const { rows } = await query(
+      `SELECT c.id, c.nombre
+       FROM public.clases c
+       JOIN public.inscripciones i ON i.clase_id = c.id
+       WHERE i.usuario_id = $1
+       ORDER BY c.nombre ASC`,
+      [req.usuario.id]
+    );
+    return res.json({ clases: rows });
+  } catch (err) {
+    console.error('Error trayendo clases del estudiante:', err);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+/**
+ * GET /api/asistencia/mi-historial/:clase_id
  *
- * Si se pasa ?fecha=, filtra las asistencias solo de ese día.
- * Si no se pasa fecha, trae todas las asistencias de la clase.
+ * Devuelve el historial completo de asistencia del estudiante autenticado
+ * en la clase indicada, junto con el % de asistencia calculado.
+ *
+ * No requiere filtro de fecha: trae todas las sesiones registradas.
+ */
+router.get('/mi-historial/:clase_id', verificarToken, soloEstudiante, async (req, res) => {
+  const { clase_id } = req.params;
+
+  try {
+    // Verificar inscripción
+    const inscritoRes = await query(
+      `SELECT i.id FROM public.inscripciones i
+       WHERE i.usuario_id = $1 AND i.clase_id = $2`,
+      [req.usuario.id, clase_id]
+    );
+
+    if (inscritoRes.rows.length === 0) {
+      return res.status(403).json({ error: 'No estás inscrito en esta clase' });
+    }
+
+    const inscripcion_id = inscritoRes.rows[0].id;
+
+    // Nombre de la clase
+    const claseRes = await query(
+      `SELECT id, nombre FROM public.clases WHERE id = $1`,
+      [clase_id]
+    );
+
+    if (claseRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Clase no encontrada' });
+    }
+
+    const clase = claseRes.rows[0];
+
+    // Buscar en MongoDB.  clase_id puede estar guardado como string o como
+    // número entero según qué ruta lo creó (qr.js vs registrar), por eso
+    // consultamos ambos tipos para no perder ningún registro.
+    const claseIdNum = parseInt(clase_id, 10);
+    const registros  = await Asistencia.find({
+      inscripcion_id,
+      $or: [{ clase_id: clase_id }, { clase_id: claseIdNum }]
+    }).sort({ fecha_dia: -1 }).lean();
+
+    // Deduplicar por fecha_dia: presente > justificado > ausente
+    const prioridad = { presente: 3, justificado: 2, ausente: 1 };
+    const sesionesMap = {};
+    for (const r of registros) {
+      const prev = sesionesMap[r.fecha_dia];
+      if (!prev || (prioridad[r.estado] ?? 0) > (prioridad[prev.estado] ?? 0)) {
+        sesionesMap[r.fecha_dia] = r;
+      }
+    }
+
+    const sesiones = Object.values(sesionesMap)
+      .sort((a, b) => b.fecha_dia.localeCompare(a.fecha_dia));
+
+    // Calcular resumen
+    const total        = sesiones.length;
+    const presentes    = sesiones.filter(s => s.estado === 'presente' || s.estado === 'justificado').length;
+    const ausentes     = sesiones.filter(s => s.estado === 'ausente').length;
+    const justificados = sesiones.filter(s => s.estado === 'justificado').length;
+    const porcentaje   = total > 0 ? Math.round((presentes / total) * 1000) / 10 : 0;
+
+    return res.json({
+      clase:   { id: clase.id, nombre: clase.nombre },
+      resumen: { presentes, ausentes, justificados, total, porcentaje },
+      sesiones: sesiones.map(s => ({
+        fecha_dia:      s.fecha_dia,
+        estado:         s.estado,
+        fecha_registro: s.fecha_registro ?? null
+      }))
+    });
+
+  } catch (err) {
+    console.error('Error trayendo historial del estudiante:', err);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  RUTAS PROFESOR
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * GET /api/asistencia/lista/:clase_id?fecha=YYYY-MM-DD
  */
 router.get('/lista/:clase_id', verificarToken, soloProfesor, async (req, res) => {
   const { clase_id } = req.params;
-  const { fecha }    = req.query; // opcional: 'YYYY-MM-DD'
+  const { fecha }    = req.query;
 
-  // Validar formato de fecha si viene
   if (fecha && !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
     return res.status(400).json({ error: 'Formato de fecha inválido. Usa YYYY-MM-DD' });
   }
 
   try {
-    // Verificar que la clase existe y pertenece al profesor
     const claseRes = await query(
       `SELECT id, nombre, fecha_hora
        FROM public.clases
@@ -141,7 +229,6 @@ router.get('/lista/:clase_id', verificarToken, soloProfesor, async (req, res) =>
 
     const clase = claseRes.rows[0];
 
-    // 1. Obtener todos los inscritos en la clase desde PostgreSQL
     const { rows } = await query(
       `SELECT i.id AS inscripcion_id, u.id, u.nombre, u.email
        FROM public.inscripciones i
@@ -151,22 +238,16 @@ router.get('/lista/:clase_id', verificarToken, soloProfesor, async (req, res) =>
       [clase_id]
     );
 
-    // 2. Buscar asistencias en MongoDB filtrando por clase y fecha si se indicó
-    //    fecha viene como 'YYYY-MM-DD', mismo formato que fecha_dia
     const filtroMongo = { clase_id };
-    if (fecha) {
-      filtroMongo.fecha_dia = fecha;
-    }
+    if (fecha) filtroMongo.fecha_dia = fecha;
 
     const asistenciasMongo = await Asistencia.find(filtroMongo).lean();
 
-    // Indexar por inscripcion_id para lookup O(1)
     const asistenciaMap = {};
     for (const a of asistenciasMongo) {
       asistenciaMap[a.inscripcion_id] = a;
     }
 
-    // 3. Combinar: cada inscrito + su asistencia (o ausente si no hay registro)
     const estudiantes = rows.map(est => {
       const a = asistenciaMap[est.inscripcion_id];
       return {
@@ -174,11 +255,11 @@ router.get('/lista/:clase_id', verificarToken, soloProfesor, async (req, res) =>
         nombre:             est.nombre,
         email:              est.email,
         inscripcion_id:     est.inscripcion_id,
-        estado:             a?.estado             ?? 'ausente',
-        fecha_registro:     a?.fecha_registro      ?? null,
-        id_asistencia:      a?._id?.toString()     ?? null,
-        confianza_score:    a?.confianza_score     ?? null,
-        revision_requerida: a?.revision_requerida  ?? false,
+        estado:             a?.estado            ?? 'ausente',
+        fecha_registro:     a?.fecha_registro     ?? null,
+        id_asistencia:      a?._id?.toString()    ?? null,
+        confianza_score:    a?.confianza_score    ?? null,
+        revision_requerida: a?.revision_requerida ?? false,
       };
     });
 
@@ -187,12 +268,8 @@ router.get('/lista/:clase_id', verificarToken, soloProfesor, async (req, res) =>
     const revision  = estudiantes.filter(r => r.revision_requerida).length;
 
     return res.json({
-      clase: {
-        id:         clase.id,
-        nombre:     clase.nombre,
-        fecha_hora: clase.fecha_hora
-      },
-      resumen:     { presentes, ausentes, total: estudiantes.length, revision },
+      clase:    { id: clase.id, nombre: clase.nombre, fecha_hora: clase.fecha_hora },
+      resumen:  { presentes, ausentes, total: estudiantes.length, revision },
       estudiantes
     });
 
@@ -204,11 +281,9 @@ router.get('/lista/:clase_id', verificarToken, soloProfesor, async (req, res) =>
 
 /**
  * PATCH /api/asistencia/estado/:inscripcion_id
- * Cambia el estado de asistencia de un alumno desde el panel del profesor.
- * Busca el registro de HOY en MongoDB y lo actualiza (o lo crea si no existe).
  */
 router.patch('/estado/:inscripcion_id', verificarToken, soloProfesor, async (req, res) => {
-  const { inscripcion_id } = req.params;
+  const { inscripcion_id }  = req.params;
   const { estado, clase_id } = req.body;
 
   const estadosValidos = ['presente', 'ausente', 'justificado'];
@@ -220,7 +295,6 @@ router.patch('/estado/:inscripcion_id', verificarToken, soloProfesor, async (req
   }
 
   try {
-    // Verificar que la clase pertenece al profesor
     const claseCheck = await query(
       `SELECT id FROM public.clases WHERE id = $1 AND profesor_id = $2`,
       [clase_id, req.usuario.id]
@@ -229,16 +303,11 @@ router.patch('/estado/:inscripcion_id', verificarToken, soloProfesor, async (req
       return res.status(403).json({ error: 'No tienes acceso a esta clase' });
     }
 
-    // Buscar registro de HOY (fecha_dia) en MongoDB
     const fechaDiaHoy = new Date().toLocaleDateString('es-CL', { timeZone: 'America/Santiago' })
-      .split('-').reverse().join('-'); // DD-MM-YYYY -> YYYY-MM-DD
+      .split('-').reverse().join('-');
 
     const registro = await Asistencia.findOneAndUpdate(
-      {
-        inscripcion_id,
-        clase_id,
-        fecha_dia: fechaDiaHoy
-      },
+      { inscripcion_id, clase_id, fecha_dia: fechaDiaHoy },
       {
         $set: {
           estado,
@@ -246,11 +315,7 @@ router.patch('/estado/:inscripcion_id', verificarToken, soloProfesor, async (req
           revision_requerida: false,
           updated_by:         req.usuario.id,
         },
-        $setOnInsert: {
-          inscripcion_id,
-          clase_id,
-          fecha_dia: fechaDiaHoy,
-        }
+        $setOnInsert: { inscripcion_id, clase_id, fecha_dia: fechaDiaHoy }
       },
       { upsert: true, new: true }
     );
@@ -276,7 +341,6 @@ router.patch('/:id_asistencia', verificarToken, soloProfesor, async (req, res) =
   }
 
   try {
-    // Verificar que la asistencia pertenece a una clase del profesor
     const check = await query(
       `SELECT a.id
        FROM public.asistencias a
@@ -310,15 +374,11 @@ router.patch('/:id_asistencia', verificarToken, soloProfesor, async (req, res) =
 
 /**
  * GET /api/asistencia/reporte/:clase_id
- * Genera un Excel con la asistencia de una clase.
- * Las fechas de sesión se obtienen desde MongoDB (días reales donde se pasó lista).
- * Solo el profesor dueño puede acceder.
  */
 router.get('/reporte/:clase_id', verificarToken, soloProfesor, async (req, res) => {
   const { clase_id } = req.params;
 
   try {
-    // 1. Verificar que la clase pertenece al profesor
     const claseRes = await query(
       `SELECT id, nombre FROM public.clases WHERE id = $1 AND profesor_id = $2`,
       [clase_id, req.usuario.id]
@@ -330,7 +390,6 @@ router.get('/reporte/:clase_id', verificarToken, soloProfesor, async (req, res) 
 
     const clase = claseRes.rows[0];
 
-    // 2. Obtener todos los estudiantes inscritos desde PostgreSQL
     const estudiantesRes = await query(
       `SELECT u.id, u.nombre, u.email, i.id AS inscripcion_id
        FROM public.inscripciones i
@@ -346,43 +405,32 @@ router.get('/reporte/:clase_id', verificarToken, soloProfesor, async (req, res) 
       return res.status(400).json({ error: 'No hay estudiantes inscritos en esta clase' });
     }
 
-    // 3. Obtener todas las asistencias de la clase desde MongoDB
     const todasAsistencias = await Asistencia.find({ clase_id }).lean();
 
-    // 4. Extraer fechas únicas de sesión usando fecha_dia (ya viene como 'YYYY-MM-DD')
     const fechasSet = new Set();
-    for (const a of todasAsistencias) {
-      fechasSet.add(a.fecha_dia);
-    }
+    for (const a of todasAsistencias) fechasSet.add(a.fecha_dia);
 
-    // Si nunca se escaneó ningún QR, igual generar el Excel con la fecha de hoy
     if (fechasSet.size === 0) {
       const hoy = new Date().toLocaleDateString('es-CL', { timeZone: 'America/Santiago' })
         .split('-').reverse().join('-');
       fechasSet.add(hoy);
     }
 
-    // Ordenar fechas cronológicamente (formato YYYY-MM-DD ordena bien con sort normal)
     const fechasClaseISO = Array.from(fechasSet).sort();
-
-    // Convertir a DD/MM/YYYY solo para mostrar en los headers del Excel
-    const fechasClase = fechasClaseISO.map(f => {
+    const fechasClase    = fechasClaseISO.map(f => {
       const [y, m, d] = f.split('-');
       return `${d}/${m}/${y}`;
     });
 
-    // 5. Construir mapa de asistencia: inscripcion_id + fecha_dia → estado
     const asistenciaMap = {};
     for (const a of todasAsistencias) {
-      const [y, m, d] = a.fecha_dia.split('-');
+      const [y, m, d]    = a.fecha_dia.split('-');
       const fechaDisplay = `${d}/${m}/${y}`;
-      const key = `${a.inscripcion_id}_${fechaDisplay}`;
-      // Si hay múltiples registros del mismo día, presente tiene prioridad
+      const key          = `${a.inscripcion_id}_${fechaDisplay}`;
       if (!asistenciaMap[key] || a.estado === 'presente') {
         asistenciaMap[key] = a.estado;
       }
     }
-
 
     // ── Construir Excel ───────────────────────────────────────────────────────
     const workbook  = new ExcelJS.Workbook();
@@ -412,25 +460,21 @@ router.get('/reporte/:clase_id', verificarToken, soloProfesor, async (req, res) 
 
     const totalCols = 2 + fechasClase.length + 1;
 
-    // Fila 1: título
     worksheet.mergeCells(1, 1, 1, totalCols);
-    const celdaTitulo = worksheet.getCell('A1');
-    celdaTitulo.value = `Reporte de Asistencia — ${clase.nombre}`;
+    const celdaTitulo  = worksheet.getCell('A1');
+    celdaTitulo.value  = `Reporte de Asistencia — ${clase.nombre}`;
     Object.assign(celdaTitulo, estiloHeaderClase);
     worksheet.getRow(1).height = 30;
 
-    // Fila 2: resumen
     worksheet.mergeCells(2, 1, 2, totalCols);
-    const celdaFecha = worksheet.getCell('A2');
-    celdaFecha.value = `Generado: ${formatFecha(new Date())}   ·   Sesiones registradas: ${fechasClase.length}`;
+    const celdaFecha   = worksheet.getCell('A2');
+    celdaFecha.value   = `Generado: ${formatFecha(new Date())}   ·   Sesiones registradas: ${fechasClase.length}`;
     celdaFecha.font      = { italic: true, size: 10, color: { argb: 'FF666666' } };
     celdaFecha.alignment = { horizontal: 'center' };
     worksheet.getRow(2).height = 18;
-
     worksheet.getRow(3).height = 6;
 
-    // Fila 4: headers — las fechas ya vienen como string 'DD/MM/YYYY'
-    const headers = ['Estudiante', 'Email', ...fechasClase, '% Asistencia'];
+    const headers    = ['Estudiante', 'Email', ...fechasClase, '% Asistencia'];
     const filaHeader = worksheet.getRow(4);
     filaHeader.height = 36;
     headers.forEach((h, i) => {
@@ -444,7 +488,6 @@ router.get('/reporte/:clase_id', verificarToken, soloProfesor, async (req, res) 
     fechasClase.forEach((_, i) => { worksheet.getColumn(3 + i).width = 9; });
     worksheet.getColumn(3 + fechasClase.length).width = 14;
 
-    // Filas de estudiantes
     estudiantes.forEach((est, rowIdx) => {
       const fila      = worksheet.getRow(5 + rowIdx);
       fila.height     = 20;
@@ -453,19 +496,18 @@ router.get('/reporte/:clase_id', verificarToken, soloProfesor, async (req, res) 
         ? { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9F9F9' } }
         : { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } };
 
-      const celdaNombre = fila.getCell(1);
-      celdaNombre.value = est.nombre;
-      celdaNombre.font  = { size: 11 };
-      celdaNombre.fill  = fillFila;
+      const celdaNombre  = fila.getCell(1);
+      celdaNombre.value  = est.nombre;
+      celdaNombre.font   = { size: 11 };
+      celdaNombre.fill   = fillFila;
 
-      const celdaEmail = fila.getCell(2);
-      celdaEmail.value     = est.email;
-      celdaEmail.font      = { size: 10, color: { argb: 'FF666666' } };
-      celdaEmail.fill      = fillFila;
-      celdaEmail.alignment = { horizontal: 'center' };
+      const celdaEmail       = fila.getCell(2);
+      celdaEmail.value       = est.email;
+      celdaEmail.font        = { size: 10, color: { argb: 'FF666666' } };
+      celdaEmail.fill        = fillFila;
+      celdaEmail.alignment   = { horizontal: 'center' };
 
       let presentes = 0;
-      // fechasClase son strings 'DD/MM/YYYY' — la key del mapa usa ese mismo formato
       fechasClase.forEach((fechaStr, colIdx) => {
         const key    = `${est.inscripcion_id}_${fechaStr}`;
         const estado = asistenciaMap[key];
@@ -479,21 +521,18 @@ router.get('/reporte/:clase_id', verificarToken, soloProfesor, async (req, res) 
           celda.value = '✕';
           Object.assign(celda, estiloAusente);
         } else {
-          // Sin registro ese día
           celda.value     = '—';
           celda.font      = { color: { argb: 'FFCCCCCC' } };
           celda.alignment = { horizontal: 'center' };
         }
       });
 
-      // % sobre el total de sesiones registradas
       const porcentaje = fechasClase.length > 0 ? (presentes / fechasClase.length) * 100 : 0;
-
-      const celdaPct  = fila.getCell(3 + fechasClase.length);
-      celdaPct.value  = porcentaje;
-      celdaPct.numFmt = '0.0"%"';
+      const celdaPct   = fila.getCell(3 + fechasClase.length);
+      celdaPct.value   = porcentaje;
+      celdaPct.numFmt  = '0.0"%"';
       celdaPct.alignment = { horizontal: 'center' };
-      celdaPct.font   = {
+      celdaPct.font    = {
         bold: true, size: 11,
         color: { argb: porcentaje >= 75 ? 'FF1A7A3C' : porcentaje >= 50 ? 'FF856404' : 'FFD42931' }
       };
@@ -503,13 +542,12 @@ router.get('/reporte/:clase_id', verificarToken, soloProfesor, async (req, res) 
       };
     });
 
-    // Fila resumen totales
-    const filaResumen  = worksheet.getRow(5 + estudiantes.length);
-    filaResumen.height = 22;
-    const lblResumen   = filaResumen.getCell(1);
-    lblResumen.value   = 'TOTALES PRESENTES';
-    lblResumen.font    = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
-    lblResumen.fill    = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF555555' } };
+    const filaResumen   = worksheet.getRow(5 + estudiantes.length);
+    filaResumen.height  = 22;
+    const lblResumen    = filaResumen.getCell(1);
+    lblResumen.value    = 'TOTALES PRESENTES';
+    lblResumen.font     = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+    lblResumen.fill     = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF555555' } };
     filaResumen.getCell(2).fill = lblResumen.fill;
 
     fechasClase.forEach((fechaStr, colIdx) => {
@@ -564,28 +602,9 @@ router.post('/cerrar/:clase_id', verificarToken, soloProfesor, async (req, res) 
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function generarFechasClase(inicio, fin, diasSemana) {
-  const fechas = [];
-  const actual = new Date(inicio);
-  actual.setHours(0, 0, 0, 0);
-  fin.setHours(23, 59, 59, 999);
-  while (actual <= fin) {
-    const diaSemana = actual.getDay() === 0 ? 7 : actual.getDay();
-    if (diasSemana.includes(diaSemana)) fechas.push(new Date(actual));
-    actual.setDate(actual.getDate() + 1);
-  }
-  return fechas;
-}
-
 function formatFecha(fecha) {
   return new Date(fecha).toLocaleDateString('es-CL', {
     day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC'
-  });
-}
-
-function formatFechaCorta(fecha) {
-  return fecha.toLocaleDateString('es-CL', {
-    day: '2-digit', month: '2-digit', timeZone: 'UTC'
   });
 }
 

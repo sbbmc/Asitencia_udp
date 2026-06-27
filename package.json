@@ -20,6 +20,8 @@
     "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^7.8.9",
+    "multer": "^2.2.0",
+    "nodemailer": "^9.0.1",
     "pg": "^8.21.0",
     "qrcode": "^1.5.4",
     "uuid": "^9.0.1"

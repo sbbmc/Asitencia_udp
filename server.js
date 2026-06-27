@@ -5,10 +5,11 @@ const helmet     = require('helmet');
 const rateLimit  = require('express-rate-limit');
 const path       = require('path');
 
-const { conectarMongo }    = require('./mongo');
-const authRoutes       = require('./routes/auth');
-const qrRoutes         = require('./routes/qr');
-const asistenciaRoutes = require('./routes/asistencia');
+const { conectarMongo }      = require('./mongo');
+const authRoutes             = require('./routes/auth');
+const qrRoutes               = require('./routes/qr');
+const asistenciaRoutes       = require('./routes/asistencia');
+const justificativosRoutes   = require('./routes/justificativos');
 
 const app  = express();
 app.set('trust proxy', 1);
@@ -51,9 +52,10 @@ app.use('/api/', limiterGeneral);
 app.use(express.json({ limit: '10kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.use('/api/auth',       authRoutes);
-app.use('/api/qr',         qrRoutes);
-app.use('/api/asistencia', asistenciaRoutes);
+app.use('/api/auth',           authRoutes);
+app.use('/api/qr',             qrRoutes);
+app.use('/api/asistencia',     asistenciaRoutes);
+app.use('/api/justificativos', justificativosRoutes);
 
 app.get('/{*splat}', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

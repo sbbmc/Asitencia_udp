@@ -77,6 +77,7 @@ conectarMongo().then(() => {
     console.log(`   DB Postgres: ${process.env.DB_NAME}@${process.env.DB_HOST}:${process.env.DB_PORT}`);
     console.log(`   Modo: ${process.env.NODE_ENV || 'development'}`);
     console.log(`   CORS: ${CORS_ORIGIN}`);
-    console.log(`   Correo: EMAIL_USER=${process.env.EMAIL_USER ? 'OK' : 'FALTA'} · EMAIL_PASS=${process.env.EMAIL_PASS ? 'OK' : 'FALTA'} · destino=${process.env.EMAIL_DESTINO || '(default)'}\n`);
+    console.log(`   Correo: EMAIL_USER=${process.env.EMAIL_USER ? 'OK' : 'FALTA'} · EMAIL_PASS=${process.env.EMAIL_PASS ? 'OK' : 'FALTA'} · destino=${process.env.EMAIL_DESTINO || '(default)'}`);
+    console.log(`   Claves EMAIL en entorno: ${JSON.stringify(Object.keys(process.env).filter(k => /email/i.test(k)))}\n`);
   });
 });

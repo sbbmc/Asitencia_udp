@@ -4,12 +4,22 @@ const multer     = require('multer');
 const nodemailer = require('nodemailer');
 const { verificarToken, soloEstudiante } = require('../middleware/auth');
 
-// Lee las variables de correo limpiando espacios y comillas que a veces
-// se cuelan al pegarlas en el panel del hosting (ej. Railway).
+// Lee las variables de correo limpiando comillas/espacios del VALOR, y
+// tolerando que el NOMBRE de la variable en el panel tenga espacios o
+// mayúsculas raras (ej. "EMAIL_USER " con espacio final), que hacen que
+// process.env.EMAIL_USER no la encuentre aunque el valor esté ahí.
 const clean = v => (v ?? '').trim().replace(/^["']|["']$/g, '');
-const EMAIL_USER    = clean(process.env.EMAIL_USER);
-const EMAIL_PASS    = clean(process.env.EMAIL_PASS);
-const EMAIL_DESTINO = clean(process.env.EMAIL_DESTINO);
+function resolveEnv(name) {
+  if (process.env[name] != null) return clean(process.env[name]);
+  const target = name.toLowerCase();
+  for (const [k, v] of Object.entries(process.env)) {
+    if (k.trim().toLowerCase() === target) return clean(v);
+  }
+  return '';
+}
+const EMAIL_USER    = resolveEnv('EMAIL_USER');
+const EMAIL_PASS    = resolveEnv('EMAIL_PASS');
+const EMAIL_DESTINO = resolveEnv('EMAIL_DESTINO');
 
 const upload = multer({
   storage: multer.memoryStorage(),

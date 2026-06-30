@@ -76,6 +76,7 @@ conectarMongo().then(() => {
     console.log(`\n✅ AsistUDP corriendo en http://localhost:${PORT}`);
     console.log(`   DB Postgres: ${process.env.DB_NAME}@${process.env.DB_HOST}:${process.env.DB_PORT}`);
     console.log(`   Modo: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`   CORS: ${CORS_ORIGIN}\n`);
+    console.log(`   CORS: ${CORS_ORIGIN}`);
+    console.log(`   Correo: EMAIL_USER=${process.env.EMAIL_USER ? 'OK' : 'FALTA'} · EMAIL_PASS=${process.env.EMAIL_PASS ? 'OK' : 'FALTA'} · destino=${process.env.EMAIL_DESTINO || '(default)'}\n`);
   });
 });

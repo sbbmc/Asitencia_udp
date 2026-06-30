@@ -604,18 +604,6 @@
   <!-- Formulario -->
   <div class="justif-form" id="justif-form-wrap">
     <div class="justif-field">
-      <label class="justif-label">Ramo</label>
-      <select class="justif-select" id="justif-select-clase">
-        <option value="">Cargando ramos...</option>
-      </select>
-    </div>
-
-    <div class="justif-field">
-      <label class="justif-label">Fecha de ausencia</label>
-      <input type="date" class="justif-date" id="justif-fecha"/>
-    </div>
-
-    <div class="justif-field">
       <label class="justif-label">Motivo / Descripción</label>
       <textarea class="justif-textarea" id="justif-motivo" maxlength="1000"
         placeholder="Describe brevemente el motivo de tu ausencia (ej: consulta médica, hospitalización, etc.)…"></textarea>
@@ -1405,15 +1393,10 @@ document.addEventListener('keydown', e => {
 });
 
 // ─── PANEL JUSTIFICATIVO ──────────────────────────────────────────────────────
-async function abrirPanelJustificativo() {
+function abrirPanelJustificativo() {
   resetJustificativo();
   document.getElementById('panel-justif-overlay').classList.add('show');
   document.getElementById('panel-justificativo').classList.add('open');
-  await cargarClasesEnJustificativo();
-
-  const hoy = new Date().toISOString().split('T')[0];
-  document.getElementById('justif-fecha').value = hoy;
-  document.getElementById('justif-fecha').max   = hoy;
 }
 
 function cerrarPanelJustificativo() {
@@ -1431,23 +1414,6 @@ function resetJustificativo() {
   document.getElementById('justif-file-name').style.display    = 'none';
   document.getElementById('justif-file-name').textContent      = '';
   document.getElementById('justif-upload-zone').classList.remove('drag-over');
-}
-
-async function cargarClasesEnJustificativo() {
-  const sel = document.getElementById('justif-select-clase');
-  sel.innerHTML = '<option value="">Cargando ramos...</option>';
-  try {
-    const data = await apiFetch('/api/asistencia/mis-clases', 'GET');
-    if (!data.clases || data.clases.length === 0) {
-      sel.innerHTML = '<option value="">Sin ramos inscritos</option>';
-      return;
-    }
-    sel.innerHTML =
-      '<option value="">— Selecciona el ramo —</option>' +
-      data.clases.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
-  } catch {
-    sel.innerHTML = '<option value="">Error al cargar ramos</option>';
-  }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1498,8 +1464,6 @@ function onArchivoSeleccionado(input) {
 }
 
 async function enviarJustificativo() {
-  const claseId  = document.getElementById('justif-select-clase').value;
-  const fecha    = document.getElementById('justif-fecha').value;
   const motivo   = document.getElementById('justif-motivo').value.trim();
   const archivo  = document.getElementById('justif-archivo').files[0];
   const errorEl  = document.getElementById('justif-error');
@@ -1507,18 +1471,14 @@ async function enviarJustificativo() {
 
   errorEl.style.display = 'none';
 
-  if (!claseId) { errorEl.textContent = 'Selecciona un ramo'; errorEl.style.display = 'block'; return; }
-  if (!fecha)   { errorEl.textContent = 'Selecciona la fecha de ausencia'; errorEl.style.display = 'block'; return; }
-  if (motivo.length < 20) { errorEl.textContent = 'El motivo debe tener al menos 20 caracteres'; errorEl.style.display = 'block'; return; }
+  if (!motivo) { errorEl.textContent = 'Escribe el motivo de tu justificativo'; errorEl.style.display = 'block'; return; }
 
   btn.disabled  = true;
   btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 0.8s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Enviando...`;
 
   try {
     const formData = new FormData();
-    formData.append('clase_id',      claseId);
-    formData.append('fecha_ausencia', fecha);
-    formData.append('motivo',        motivo);
+    formData.append('motivo', motivo);
     if (archivo) formData.append('archivo', archivo);
 
     const r = await fetch('/api/justificativos/enviar', {
